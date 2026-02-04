@@ -24,7 +24,7 @@ pipeline {
         stage('Test Data (dbt)') {
             steps {
                 // Now we can run standard compose commands
-                sh 'docker compose run macro-engine sh -c "cd dbt_macro && dbt test"'
+                sh 'docker compose run macro-engine dbt test --project-dir dbt_macro --profiles-dir dbt_macro'
             }
         }
         
