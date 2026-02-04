@@ -7,7 +7,7 @@ pipeline {
                 // The opening curly brace starts the 'body'
                 withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
                     sh '''
-                        docker docker compose run \
+                        docker compose run \
                           -v $(pwd):/app \
                           -e FRED_API_KEY=${FRED_API_KEY} \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
