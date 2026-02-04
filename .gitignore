@@ -1,0 +1,22 @@
+ta & Databases
+data/
+*.db
+*.parquet
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Infrastructure & Secrets
+.terraform/
+terraform.tfstate
+*.tfvars
+secrets.json
+
+# IDEs
+.vscode/
+.idea/
