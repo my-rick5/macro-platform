@@ -36,7 +36,6 @@ pipeline {
                         "
                     '''
                     sh 'docker compose run macro-engine python scripts/fred_ingestion.py'
-}
                 }
             }
         }
