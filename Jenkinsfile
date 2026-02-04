@@ -32,7 +32,7 @@ pipeline {
             steps {
                 sh '''
                     docker compose run -e FRED_API_KEY=${FRED_API_KEY} macro-engine sh -c "
-                        mkdir -p /app/data && 
+                        mkdir -p /app/data/raw && 
                         python scripts/fred_ingestion.py && 
                         dbt run --project-dir dbt_macro --profiles-dir dbt_macro && 
                         python scripts/bvar_ultra.py
