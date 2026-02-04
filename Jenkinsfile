@@ -5,7 +5,7 @@ pipeline {
         stage('Full Pipeline') {
             // We use withCredentials inside the stage to ensure it's tightly scoped
             steps {
-                withCredentials([string(credentialsId: 'FRED_API_KEY', variable: 'FRED_API_KEY')]) {
+                withCredentials([string(credentialsId: 'af3b122c380f66ec4808d665e80786a7', variable: 'FRED_API_KEY')])
                     sh '''
                         docker compose run \
                           -e FRED_API_KEY=${FRED_API_KEY} \
