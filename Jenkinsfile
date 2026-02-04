@@ -30,7 +30,7 @@ pipeline {
         
         stage('Run Forecast') {
             steps {
-                sh 'docker compose run macro-engine python scripts/forecast.py'
+                sh 'docker compose run macro-engine python scripts/bvar_ultra.py'
             }
         }
     }
