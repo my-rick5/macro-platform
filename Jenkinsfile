@@ -5,7 +5,7 @@ pipeline {
         stage('Full Pipeline') {
             steps {
                 // The opening curly brace starts the 'body'
-                withCredentials([string(credentialsId: 'FRED_API_KEY', variable: 'FRED_API_KEY')]) {
+                withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
                     sh '''
                         docker compose run \
                           -e FRED_API_KEY=${FRED_API_KEY} \
