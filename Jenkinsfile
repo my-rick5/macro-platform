@@ -11,7 +11,7 @@ pipeline {
 
         stage('Full Pipeline') {
             steps {
-                withCredentials([string(credentialsId: 'FRED_API_KEY', variable: 'FRED_API_KEY')]) {
+                withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
                     sh '''
                         docker compose down --remove-orphans || true
                         
@@ -38,7 +38,7 @@ pipeline {
                         "
                     '''
                 }
-            }
+            }   
         }
     }
 
