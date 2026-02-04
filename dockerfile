@@ -11,15 +11,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy dependency list and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy the project structure
-COPY scripts/ ./scripts/
-COPY dbt_macro/ ./dbt_macro/
-# We don't copy 'data/' because we will mount it as a volume
+# USE ABSOLUTE PATHS FOR COPY
+COPY scripts/ /app/scripts/
+COPY dbt_macro/ /app/dbt_macro/
 
 # Set Environment Variables
 ENV PYTHONUNBUFFERED=1
-
-# The container doesn't "do" anything until we tell it to via 'docker run'
+ENV PYTHONPATH=/app

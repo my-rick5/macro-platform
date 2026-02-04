@@ -15,15 +15,17 @@ pipeline {
                     sh '''
                         docker compose down --remove-orphans || true
                         
+                        # We explicitly set the --workdir to /app to match the Dockerfile
                         docker compose run \
+                          --workdir /app \
                           -e FRED_API_KEY=$FRED_API_KEY \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                           macro-engine sh -c "
-                            python scripts/fred_ingestion.py && \
-                            cd dbt_macro && \
+                            python /app/scripts/fred_ingestion.py && \
+                            cd /app/dbt_macro && \
                             dbt run --profiles-dir . && \
-                            cd .. && \
-                            python scripts/bvar_ultra.py
+                            cd /app && \
+                            python /app/scripts/bvar_ultra.py
                         "
                     '''
                 }
