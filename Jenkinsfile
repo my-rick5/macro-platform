@@ -15,12 +15,10 @@ pipeline {
                     sh '''
                         docker compose down --remove-orphans || true
                         
-                        # REMOVE the -v mount for the whole /app directory
                         docker compose run \
-                          -e FRED_API_KEY=${FRED_API_KEY} \
+                          -e FRED_API_KEY=$FRED_API_KEY \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                           macro-engine sh -c "
-                            # Use relative paths since WORKDIR is /app
                             python scripts/fred_ingestion.py && \
                             cd dbt_macro && \
                             dbt run --profiles-dir . && \
