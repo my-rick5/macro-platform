@@ -7,6 +7,7 @@ pipeline {
                 // The opening curly brace starts the 'body'
                 withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
                     sh '''
+                        docker compose down --remove-orphans || true
                         docker compose run \
                           -v $(pwd):/app \
                           -e FRED_API_KEY=${FRED_API_KEY} \
