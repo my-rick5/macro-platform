@@ -1,21 +1,18 @@
 version: '3.8'
 
 services:
-  # The main pipeline engine
   macro-engine:
     build:
       context: .
       dockerfile: Dockerfile
     image: macro-pipeline-engine-macro-engine
-    volumes:
-      - .:/app
+    # Removed volume mount to prevent shadowing the scripts inside the image
     environment:
       - FRED_API_KEY=${FRED_API_KEY}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
     depends_on:
       - mlflow
 
-  # The experiment tracking server
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.10.2
     container_name: mlflow_server
@@ -23,5 +20,4 @@ services:
       - "5000:5000"
     volumes:
       - ./mlruns:/mlruns
-    # Runs the server and ensures it listens on all interfaces within the docker network
     command: mlflow server --host 0.0.0.0 --port 5000
