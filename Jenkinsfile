@@ -13,10 +13,14 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
                     sh '''
-                        # Start MLflow first to ensure it is ready
+                        # 1. THE FIX: Remove any existing containers with these names
+                        # This clears the "Conflict" error without deleting the 'mlflow_data' volume
+                        docker compose rm -f -s mlflow macro-engine || true
+                        
+                        # 2. Start MLflow
                         docker compose up -d mlflow
                         
-                        # Run the engine
+                        # 3. Run the engine
                         docker compose run \
                           -e FRED_API_KEY=$FRED_API_KEY \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
@@ -31,7 +35,6 @@ pipeline {
                 }
             }
         }
-    }
 
     post {
         always {
@@ -40,4 +43,4 @@ pipeline {
             sh 'docker compose stop macro-engine || true'
         }
     }
-}
+}   
