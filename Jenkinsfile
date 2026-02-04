@@ -15,26 +15,17 @@ pipeline {
                     sh '''
                         docker compose down --remove-orphans || true
                         
-                        # We use ${WORKSPACE} to be absolutely certain of the host path
+                        # REMOVE the -v mount for the whole /app directory
                         docker compose run \
-                          -v ${WORKSPACE}:/app \
                           -e FRED_API_KEY=${FRED_API_KEY} \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                           macro-engine sh -c "
-                            # Verify pathing before running
-                            if [ -d \\"/app/scripts\\" ]; then
-                                echo 'Found scripts directory';
-                            else
-                                echo 'ERROR: scripts directory not found at /app/scripts';
-                                ls -la /app;
-                                exit 1;
-                            fi
-                            
-                            python /app/scripts/fred_ingestion.py && \
-                            cd /app/dbt_macro && \
+                            # Use relative paths since WORKDIR is /app
+                            python scripts/fred_ingestion.py && \
+                            cd dbt_macro && \
                             dbt run --profiles-dir . && \
-                            cd /app && \
-                            python /app/scripts/bvar_ultra.py
+                            cd .. && \
+                            python scripts/bvar_ultra.py
                         "
                     '''
                 }
