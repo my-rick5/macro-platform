@@ -1,22 +1,17 @@
-ta & Databases
-data/
-*.db
-*.parquet
-*.csv
+# Jenkins data
+jenkins_home/
 
-# Python
+# Python junk
 __pycache__/
 *.py[cod]
 *$py.class
 venv/
 .env
 
-# Infrastructure & Secrets
-.terraform/
-terraform.tfstate
-*.tfvars
-secrets.json
+# Data & dbt artifacts
+data/
+target/
+logs/
 
-# IDEs
-.vscode/
-.idea/
+# OS junk
+.DS_Store

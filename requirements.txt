@@ -1,0 +1,9 @@
+polars
+duckdb
+fredapi
+pandas
+statsmodels
+matplotlib
+python-dotenv
+dbt-duckdb
+pyarrow

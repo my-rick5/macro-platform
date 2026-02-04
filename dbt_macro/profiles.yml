@@ -1,0 +1,9 @@
+macro_ops:  # Or whatever you named your project
+  outputs:
+    dev:
+      type: duckdb
+      path: '/app/data/macro_warehouse.db' # This puts the DB in your project folder
+      extensions:
+        - httpfs
+        - parquet
+  target: dev

@@ -1,0 +1,22 @@
+name: 'macro_ops'
+version: '1.0.0'
+config-version: 2
+
+# This must match the name in your profiles.yml
+profile: 'macro_ops'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  macro_ops:
+    # This applies the 'view' setting to everything in the models/ folder
+    +materialized: table

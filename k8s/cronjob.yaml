@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: macro-engine-daily
+  namespace: macro-platform
+spec:
+  # Run at 00:00 UTC every day
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: macro-engine
+            image: gcr.io/your-project-id/macro-engine:latest
+            imagePullPolicy: IfNotPresent
+            # Injecting your FRED key from K8s Secrets
+            env:
+              - name: FRED_API_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: fred-secrets
+                    key: api-key
+              - name: PROJECT_ROOT
+                value: "/app"
+              - name: DB_PATH
+                value: "/app/data/macro_warehouse.db"
+            # Mapping your persistent cloud storage
+            volumeMounts:
+            - name: macro-storage
+              mountPath: /app/data
+          restartPolicy: OnFailure
+          volumes:
+          - name: macro-storage
+            persistentVolumeClaim:
+              claimName: macro-data-pvc
