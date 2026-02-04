@@ -4,9 +4,9 @@ services:
   macro-engine:
     build: .
     volumes:
-      - .:/app  # Maps your local folder to the container
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${PWD}:/app:rw
+      # - .:/app  # Maps your local folder to the container
+      # - /var/run/docker.sock:/var/run/docker.sock
+      # - ${PWD}:/app:rw
     env_file:
       - .env
     # This command runs the whole pipeline inside the container
