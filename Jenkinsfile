@@ -7,16 +7,17 @@ pipeline {
                 // The opening curly brace starts the 'body'
                 withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
                     sh '''
-                        docker compose run \
+                        docker docker compose run \
+                          -v $(pwd):/app \
                           -e FRED_API_KEY=${FRED_API_KEY} \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                           macro-engine sh -c "
                             mkdir -p /app/data/raw /app/notebooks && \
-                            python scripts/fred_ingestion.py && \
-                            cd dbt_macro && \
+                            python /app/scripts/fred_ingestion.py && \
+                            cd /app/dbt_macro && \
                             dbt run --profiles-dir . && \
-                            cd .. && \
-                            python scripts/bvar_ultra.py
+                            cd /app && \
+                            python /app/scripts/bvar_ultra.py
                         "
                     '''
                 } // The closing curly brace ends the 'body'
