@@ -7,3 +7,4 @@ matplotlib
 python-dotenv
 dbt-duckdb
 pyarrow
+mlflow

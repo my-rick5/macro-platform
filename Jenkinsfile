@@ -1,17 +1,18 @@
 pipeline {
     agent any
-    
+
     environment {
-        // Ensuring your API key is available to the shell
-        FRED_API_KEY = credentials('fred-api-key')
+        // Load the FRED API Key from Jenkins Credentials
+        FRED_API_KEY = credentials('FRED_API_KEY')
+        // Internal Docker network URI for MLflow
+        MLFLOW_TRACKING_URI = "http://mlflow:5000"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Initialize') {
             steps {
-                checkout scm
-                // Create a blank .env file so Docker Compose doesn't panic
-                sh 'touch .env' 
+                // Ensure environment file exists for Docker Compose
+                sh 'touch .env'
             }
         }
 
@@ -21,26 +22,39 @@ pipeline {
             }
         }
 
-        stage('Test Data (dbt)') {
-            steps {
-                // Now we can run standard compose commands
-                sh 'docker compose run macro-engine dbt test --project-dir dbt_macro --profiles-dir dbt_macro'
-            }
-        }
-        
-        stage('Run Forecast') {
+        stage('Run Full Pipeline') {
             steps {
                 sh '''
-                    docker compose run -e FRED_API_KEY=${FRED_API_KEY} macro-engine sh -c "
-                        mkdir -p /app/data/raw /app/notebooks && 
-                        python scripts/fred_ingestion.py && 
-                        cd dbt_macro && 
-                        dbt run --profiles-dir . && 
-                        cd .. && 
+                    docker compose run \
+                      -e FRED_API_KEY=${FRED_API_KEY} \
+                      -e MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI} \
+                      macro-engine sh -c "
+                        # 1. Create necessary output directories
+                        mkdir -p /app/data/raw /app/notebooks && \
+                        
+                        # 2. Ingest raw data from FRED
+                        python scripts/fred_ingestion.py && \
+                        
+                        # 3. Transform data with dbt
+                        cd dbt_macro && \
+                        dbt run --profiles-dir . && \
+                        cd .. && \
+                        
+                        # 4. Execute BVAR model and log to MLflow
                         python scripts/bvar_ultra.py
                     "
                 '''
-                    }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Optional: Spin down containers to free up resources
+            sh 'docker compose down'
+        }
+        failure {
+            echo "Pipeline failed. Check the MLflow connection or FRED API quotas."
         }
     }
 }

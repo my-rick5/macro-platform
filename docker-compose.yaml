@@ -1,31 +1,27 @@
 version: '3.8'
 
 services:
+  # The main pipeline engine
   macro-engine:
-    build: .
-    # Removed empty volumes list to fix "must be a list" error
-    # Environment is passed via Jenkins 'withCredentials' or 'environment' block
-    env_file:
-      - .env
-    command: >
-      sh -c "python scripts/fred_ingestion.py && 
-             cd dbt_macro && dbt run --profiles-dir . && 
-             cd .. && python scripts/bvar_ultra.py"
-    networks:
-      - macro-network
-
-  jenkins:
-    image: jenkins/jenkins:lts
-    privileged: true
-    user: root
-    ports:
-      - "8080:8080"
-      - "50000:50000"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: macro-pipeline-engine-macro-engine
     volumes:
-      - ./jenkins_home:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - macro-network
+      - .:/app
+    environment:
+      - FRED_API_KEY=${FRED_API_KEY}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      - mlflow
 
-networks:
-  macro-network:
+  # The experiment tracking server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.2
+    container_name: mlflow_server
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    # Runs the server and ensures it listens on all interfaces within the docker network
+    command: mlflow server --host 0.0.0.0 --port 5000
