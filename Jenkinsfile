@@ -3,9 +3,9 @@ pipeline {
 
     stages {
         stage('Full Pipeline') {
-            // We use withCredentials inside the stage to ensure it's tightly scoped
             steps {
-                withCredentials([string(credentialsId: 'af3b122c380f66ec4808d665e80786a7', variable: 'FRED_API_KEY')])
+                // The opening curly brace starts the 'body'
+                withCredentials([string(credentialsId: 'FRED_API_KEY', variable: 'FRED_API_KEY')]) {
                     sh '''
                         docker compose run \
                           -e FRED_API_KEY=${FRED_API_KEY} \
@@ -19,18 +19,17 @@ pipeline {
                             python scripts/bvar_ultra.py
                         "
                     '''
-                }
+                } // The closing curly brace ends the 'body'
             }
         }
     }
 
-    // Moving post-actions inside the pipeline ensures they have the right context
     post {
         always {
-            // This ensures we clean up containers even if the script fails
             sh 'docker compose down || true'
         }
         failure {
-            echo "Pipeline failed. Check FRED API key validity or MLflow server status."
+            echo "Pipeline failed. Check FRED API key ID or MLflow connectivity."
         }
     }
+}
