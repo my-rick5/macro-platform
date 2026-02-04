@@ -8,24 +8,21 @@ pipeline {
                 withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
                     sh '''
                         docker compose down --remove-orphans || true
+                        
+                        # Remove the -v $(pwd):/app mount so we use the code baked into the image
                         docker compose run \
-                            -v $(pwd):/app \
-                            -e FRED_API_KEY=${FRED_API_KEY} \
-                            -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
-                            macro-engine sh -c "
-                              echo '--- DEBUG: Current Directory Content ---' && \
-                              ls -R /app && \
-                              echo '--- END DEBUG ---' && \
-                              
-                              mkdir -p /app/data/raw /app/notebooks && \
-                              python /app/scripts/fred_ingestion.py && \
-                              cd /app/dbt_macro && \
-                              dbt run --profiles-dir . && \
-                              cd /app && \
-                              python /app/scripts/bvar_ultra.py  
+                          -e FRED_API_KEY=${FRED_API_KEY} \
+                          -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
+                          macro-engine sh -c "
+                            mkdir -p scripts data/raw notebooks dbt_macro && \
+                            python scripts/fred_ingestion.py && \
+                            cd dbt_macro && \
+                            dbt run --profiles-dir . && \
+                            cd .. && \
+                            python scripts/bvar_ultra.py
                         "
                     '''
-                } // The closing curly brace ends the 'body'
+                }
             }
         }
     }
