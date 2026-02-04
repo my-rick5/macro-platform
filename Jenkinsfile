@@ -30,8 +30,15 @@ pipeline {
         
         stage('Run Forecast') {
             steps {
-                sh 'docker compose run macro-engine sh -c "mkdir -p /app/data && python scripts/bvar_ultra.py"'
-            }
+                sh '''
+                    docker compose run macro-engine sh -c "
+                        mkdir -p /app/data && 
+                        python scripts/fred_ingestion.py && 
+                        dbt run --project-dir dbt_macro --profiles-dir dbt_macro && 
+                        python scripts/bvar_ultra.py
+                    "
+                '''
+                    }
         }
     }
 }
