@@ -40,5 +40,12 @@ pipeline {
                 archiveArtifacts artifacts: 'notebooks/*.png', fingerprint: true
             }
         }
+
+        stage('Test Data (dbt)') {
+           steps {
+        // Adding --env-file /dev/null tells compose to stop looking for the default .env
+                sh 'docker compose --env-file /dev/null run macro-engine sh -c "cd dbt_macro && dbt test"'
+    }
+}
     }
 }
