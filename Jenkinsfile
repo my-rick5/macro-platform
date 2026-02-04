@@ -34,4 +34,3 @@ pipeline {
             echo "Pipeline failed. Check FRED API key validity or MLflow server status."
         }
     }
-}
