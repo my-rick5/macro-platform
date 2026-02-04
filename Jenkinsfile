@@ -2,24 +2,39 @@ pipeline {
     agent any 
 
     stages {
+        stage('Build Image') {
+            steps {
+                // This ensures the image actually contains your latest code
+                sh 'docker compose build --no-cache'
+            }
+        }
+
         stage('Full Pipeline') {
             steps {
-                // The opening curly brace starts the 'body'
-                withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
+                withCredentials([string(credentialsId: 'FRED_API_KEY', variable: 'FRED_API_KEY')]) {
                     sh '''
                         docker compose down --remove-orphans || true
                         
-                        # Remove the -v $(pwd):/app mount so we use the code baked into the image
+                        # We use ${WORKSPACE} to be absolutely certain of the host path
                         docker compose run \
+                          -v ${WORKSPACE}:/app \
                           -e FRED_API_KEY=${FRED_API_KEY} \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                           macro-engine sh -c "
-                            mkdir -p scripts data/raw notebooks dbt_macro && \
-                            python scripts/fred_ingestion.py && \
-                            cd dbt_macro && \
+                            # Verify pathing before running
+                            if [ -d \\"/app/scripts\\" ]; then
+                                echo 'Found scripts directory';
+                            else
+                                echo 'ERROR: scripts directory not found at /app/scripts';
+                                ls -la /app;
+                                exit 1;
+                            fi
+                            
+                            python /app/scripts/fred_ingestion.py && \
+                            cd /app/dbt_macro && \
                             dbt run --profiles-dir . && \
-                            cd .. && \
-                            python scripts/bvar_ultra.py
+                            cd /app && \
+                            python /app/scripts/bvar_ultra.py
                         "
                     '''
                 }
@@ -30,9 +45,6 @@ pipeline {
     post {
         always {
             sh 'docker compose down || true'
-        }
-        failure {
-            echo "Pipeline failed. Check FRED API key ID or MLflow connectivity."
         }
     }
 }
