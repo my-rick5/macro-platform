@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Build & Clean') {
             steps {
-                // We keep volumes but clean orphans to ensure named volume persists
+                // Build the image to ensure the latest Python scripts are baked in
                 sh 'docker compose build'
             }
         }
@@ -13,18 +13,23 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
                     sh '''
-                        # 1. THE FIX: Remove any existing containers with these names
-                        # This clears the "Conflict" error without deleting the 'mlflow_data' volume
+                        # 1. CLEANUP OLD CONTAINERS (The Fix for Build #64)
+                        # This stops and removes old containers to prevent name conflicts,
+                        # but keeps the mlflow_data volume intact.
                         docker compose rm -f -s mlflow macro-engine || true
                         
-                        # 2. Start MLflow
+                        # 2. START MLFLOW SERVER
+                        # Starts in background (-d) so it stays alive for viewing
                         docker compose up -d mlflow
                         
-                        # 3. Run the engine
+                        # 3. RUN THE MACRO ENGINE
+                        # We use 'run' to execute the pipeline steps sequentially.
+                        # Since volumes were removed from compose, it uses the internal image files.
                         docker compose run \
                           -e FRED_API_KEY=$FRED_API_KEY \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                           macro-engine sh -c "
+                            mkdir -p notebooks && \
                             python scripts/fred_ingestion.py && \
                             cd dbt_macro && \
                             dbt run --profiles-dir . && \
@@ -35,12 +40,13 @@ pipeline {
                 }
             }
         }
+    }
 
     post {
         always {
-            // STOP the engine to save resources, but do NOT 'down' the whole project.
-            // This keeps the mlflow_server container running for you to view.
+            // We only STOP the engine to free up memory.
+            // We do NOT use 'down' so that the mlflow_server remains reachable.
             sh 'docker compose stop macro-engine || true'
         }
     }
-}   
+}
