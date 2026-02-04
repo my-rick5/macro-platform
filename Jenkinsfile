@@ -1,52 +1,68 @@
 pipeline {
     agent any
 
+    environment {
+        // Automatically detect User ID and Docker Group ID to prevent permission issues
+        AIRFLOW_UID = sh(script: 'id -u', returnStdout: true).trim()
+        DOCKER_GID  = sh(script: "getent group docker | cut -d: -f3 || echo 999", returnStdout: true).trim()
+    }
+
     stages {
-        stage('Build & Clean') {
+        stage('Cleanup & Build') {
             steps {
-                // Build the image to ensure the latest Python scripts are baked in
-                sh 'docker compose build'
+                echo "Cleaning up old containers and building the Macro Engine..."
+                // Stop containers but keep volumes so MLflow and Airflow DB persist
+                sh 'docker compose stop || true'
+                sh 'docker compose build macro-engine'
             }
         }
 
-        stage('Full Pipeline') {
+        stage('Initialize Airflow') {
             steps {
-                withCredentials([string(credentialsId: 'fred-api-key', variable: 'FRED_API_KEY')]) {
-                    sh '''
-                        # 1. CLEANUP OLD CONTAINERS (The Fix for Build #64)
-                        # This stops and removes old containers to prevent name conflicts,
-                        # but keeps the mlflow_data volume intact.
-                        docker compose rm -f -s mlflow macro-engine || true
-                        
-                        # 2. START MLFLOW SERVER
-                        # Starts in background (-d) so it stays alive for viewing
-                        docker compose up -d mlflow
-                        
-                        # 3. RUN THE MACRO ENGINE
-                        # We use 'run' to execute the pipeline steps sequentially.
-                        # Since volumes were removed from compose, it uses the internal image files.
-                        docker compose run \
-                          -e FRED_API_KEY=$FRED_API_KEY \
-                          -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
-                          macro-engine sh -c "
-                            mkdir -p notebooks && \
-                            python scripts/fred_ingestion.py && \
-                            cd dbt_macro && \
-                            dbt run --profiles-dir . && \
-                            cd .. && \
-                            python scripts/bvar_ultra.py
-                        "
-                    '''
+                echo "Setting up Airflow environment..."
+                sh '''
+                    # Create host directories for Airflow persistence
+                    mkdir -p dags logs plugins
+                    
+                    # Ensure Postgres is up before initializing
+                    docker compose up -d postgres
+                    
+                    # Initialize Airflow Metadata Database
+                    docker compose run --rm airflow-webserver airflow db init
+                    
+                    # Create Admin User (admin/admin) - ignore error if user exists
+                    docker compose run --rm airflow-webserver \
+                        airflow users create \
+                        --username admin \
+                        --password admin \
+                        --firstname Zach \
+                        --lastname Myrick \
+                        --role Admin \
+                        --email zach@example.com || true
+                '''
+            }
+        }
+
+        stage('Deploy Stack') {
+            steps {
+                echo "Launching Full Stack..."
+                sh 'docker compose up -d'
+                
+                script {
+                    echo "========================================================="
+                    echo "DEPLOYMENT SUCCESSFUL"
+                    echo "Jenkins UI:   http://localhost:8080"
+                    echo "Airflow UI:   http://localhost:8085 (User: admin / Pass: admin)"
+                    echo "MLflow UI:    http://localhost:5000"
+                    echo "========================================================="
                 }
             }
         }
     }
 
     post {
-        always {
-            // We only STOP the engine to free up memory.
-            // We do NOT use 'down' so that the mlflow_server remains reachable.
-            sh 'docker compose stop macro-engine || true'
+        failure {
+            echo "Deployment failed. Run 'docker compose logs' on the server to debug."
         }
     }
 }

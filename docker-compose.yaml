@@ -1,26 +1,47 @@
 version: '3.8'
 
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.2
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - /var/run/docker.sock:/var/run/docker.sock # The link to the host's Docker
+  user: "${AIRFLOW_UID:-50000}:0"
+  # THE PERMISSION FIX: This gives the Airflow user access to the Docker group
+  group_add:
+    - "${DOCKER_GID:-999}" 
+
 services:
-  macro-engine:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: macro-pipeline-engine-macro-engine
-    # No volumes here to prevent script shadowing
-    environment:
-      - FRED_API_KEY=${FRED_API_KEY}
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
-    depends_on:
-      - mlflow
+  postgres:
+    image: postgres:13
+    environment: [POSTGRES_USER=airflow, POSTGRES_PASSWORD=airflow, POSTGRES_DB=airflow]
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8085:8080" # Jenkins is on 8080, Airflow is now on 8085
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.10.2
     container_name: mlflow_server
-    ports:
-      - "5000:5000"
-    volumes:
-      - mlflow_data:/mlruns  # Persists data in a managed Docker volume
+    ports: ["5000:5000"]
+    volumes: ["mlflow_data:/mlruns"]
     command: mlflow server --host 0.0.0.0 --port 5000
 
+  macro-engine:
+    build: .
+    image: macro-pipeline-engine-macro-engine:latest
+    profiles: ["donotrun"]
+
 volumes:
-  mlflow_data:  # This is the "safe" storage for your MLflow results
+  mlflow_data:
