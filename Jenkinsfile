@@ -23,7 +23,7 @@ pipeline {
         stage('Test Data (dbt)') {
             steps {
                 // We run dbt tests to ensure FRED didn't send us garbage
-                sh 'docker compose run macro-engine sh -c "cd dbt_macro && dbt test"'
+                sh 'docker compose --env-file /dev/null run macro-engine sh -c "cd dbt_macro && dbt test"'
             }
         }
 
@@ -40,11 +40,6 @@ pipeline {
                 archiveArtifacts artifacts: 'notebooks/*.png', fingerprint: true
             }
         }
-
-        stage('Test Data (dbt)') {
-           steps {
-        // Adding --env-file /dev/null tells compose to stop looking for the default .env
-                sh 'docker compose --env-file /dev/null run macro-engine sh -c "cd dbt_macro && dbt test"'
     }
 }
     }
