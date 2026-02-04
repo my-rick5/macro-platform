@@ -17,7 +17,7 @@ pipeline {
                         docker compose down -v --remove-orphans || true
                         
                         # 2. Run with --no-deps and relative paths to bypass compose volume logic
-                        docker compose run --no-deps \
+                        docker compose run \
                           -e FRED_API_KEY=$FRED_API_KEY \
                           -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
                           macro-engine sh -c "
