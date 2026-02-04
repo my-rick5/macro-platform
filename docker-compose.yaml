@@ -3,18 +3,17 @@ version: '3.8'
 services:
   macro-engine:
     build: .
-    volumes:
-      # - .:/app  # Maps your local folder to the container
-      # - /var/run/docker.sock:/var/run/docker.sock
-      # - ${PWD}:/app:rw
+    # Removed empty volumes list to fix "must be a list" error
+    # Environment is passed via Jenkins 'withCredentials' or 'environment' block
     env_file:
       - .env
-    # This command runs the whole pipeline inside the container
     command: >
       sh -c "python scripts/fred_ingestion.py && 
              cd dbt_macro && dbt run --profiles-dir . && 
              cd .. && python scripts/bvar_ultra.py"
-# The New Jenkins Service
+    networks:
+      - macro-network
+
   jenkins:
     image: jenkins/jenkins:lts
     privileged: true
@@ -24,7 +23,7 @@ services:
       - "50000:50000"
     volumes:
       - ./jenkins_home:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock # Allows Jenkins to use Docker
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - macro-network
 
