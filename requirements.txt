@@ -11,4 +11,4 @@ mlflow
 google-cloud-storage
 gcsfs
 plotly
-streamlit
+streamlit 
