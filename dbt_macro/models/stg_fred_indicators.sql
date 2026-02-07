@@ -1,30 +1,39 @@
 {{ config(materialized='table') }}
 
-with dates as (
-    -- We use Fed Funds as our primary monthly date spine
-    select date from read_parquet('../data/raw/FEDFUNDS.parquet')
+WITH raw_data AS (
+    SELECT 
+        regexp_extract(filename::VARCHAR, 'raw/(.*)\.parquet', 1) as series_id,
+        "date"::TIMESTAMP as observation_date,
+        "value"::DOUBLE as observation_value
+    FROM read_parquet(
+        '{{ var("raw_data_path") }}/*.parquet', 
+        union_by_name=True,
+        filename=True 
+    )
 ),
-ff as (select date, value from read_parquet('../data/raw/FEDFUNDS.parquet')),
-cpi as (select date, value from read_parquet('../data/raw/CPIAUCSL.parquet')),
-gdp as (select date, value from read_parquet('../data/raw/GDPC1.parquet')),
-unemp as (select date, value from read_parquet('../data/raw/UNRATE.parquet')),
-vix as (select date, value from read_parquet('../data/raw/VIXCLS.parquet')),
-bal as (select date, value from read_parquet('../data/raw/WALCL.parquet'))
 
-select
-    d.date,
-    ff.value as fed_funds_rate,
-    unemp.value as unemployment_rate,
-    -- Calculate Monthly Inflation
-    (cpi.value / lag(cpi.value) over (order by d.date) - 1) * 100 as inflation_mom,
-    -- Forward Fill the quarterly/weekly/daily gaps
-    last_value(gdp.value ignore nulls) over (order by d.date) as real_gdp,
-    last_value(vix.value ignore nulls) over (order by d.date) as vix,
-    last_value(bal.value ignore nulls) over (order by d.date) as fed_assets
-from dates d
-left join ff on d.date = ff.date
-left join cpi on d.date = cpi.date
-left join gdp on d.date = gdp.date
-left join unemp on d.date = unemp.date
-left join vix on d.date = vix.date
-left join bal on d.date = bal.date
+pivoted AS (
+    SELECT
+        observation_date as date,
+        MAX(CASE WHEN series_id = 'FEDFUNDS' THEN observation_value END) as fed_funds_rate,
+        MAX(CASE WHEN series_id = 'CPIAUCSL' THEN observation_value END) as cpi,
+        MAX(CASE WHEN series_id = 'GDPC1' THEN observation_value END) as gdp,
+        MAX(CASE WHEN series_id = 'UNRATE' THEN observation_value END) as unemployment_rate,
+        MAX(CASE WHEN series_id = 'VIXCLS' THEN observation_value END) as vix,
+        MAX(CASE WHEN series_id = 'WALCL' THEN observation_value END) as fed_assets
+    FROM raw_data
+    GROUP BY 1
+)
+
+SELECT
+    date,
+    fed_funds_rate,
+    unemployment_rate,
+    -- Monthly Inflation calculation
+    (cpi / lag(cpi) over (order by date) - 1) * 100 as inflation_mom,
+    -- Forward Fill logic with names matching your Python script
+    last_value(gdp ignore nulls) over (order by date rows between unbounded preceding and current row) as real_gdp,
+    last_value(vix ignore nulls) over (order by date rows between unbounded preceding and current row) as vix,
+    last_value(fed_assets ignore nulls) over (order by date rows between unbounded preceding and current row) as fed_assets
+FROM pivoted
+ORDER BY date DESC

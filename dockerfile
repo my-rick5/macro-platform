@@ -1,19 +1,23 @@
-FROM python:3.10-slim
-
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN mkdir -p /app/notebooks /app/data
-
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpng-dev \
+    libfreetype6-dev \
+    && rm -rf /var/lib/apt/lists/*
+    
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the folders directly into /app
-COPY scripts/ ./scripts/
-COPY dbt_macro/ ./dbt_macro/
+# Force-install critical GCS and Data libs just in case
+RUN pip install --no-cache-dir -r requirements.txt \
+    streamlit gcsfs pyarrow polars google-cloud-storage
 
-ENV PYTHONUNBUFFERED=1
+# Copy all files from local to /app
+COPY . .
+
+# Explicitly bind to 0.0.0.0 and the PORT env var
+# We use 'python -m streamlit' to ensure the correct pathing
+ENTRYPOINT ["python", "-m", "streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]

@@ -1,41 +1,52 @@
 import os
+import io
 import pandas as pd
 from fredapi import Fred
-from dotenv import load_dotenv
+from google.cloud import storage
 
-# Load variables from .env file
-load_dotenv()
+# --- Configuration ---
+FRED_API_KEY = os.environ.get('FRED_API_KEY')
+GCS_BUCKET_NAME = 'macroflow-warehouse-2026'
 
-FRED_API_KEY = os.getenv('FRED_API_KEY')
-# Use PROJECT_ROOT to build an absolute path
-PROJECT_ROOT = os.getenv('PROJECT_ROOT', os.getcwd())
-raw_path = os.path.join(PROJECT_ROOT, 'data', 'raw')
+# The list of series we want to track
+SERIES_LIST = [
+    'FEDFUNDS', 'CPIAUCSL', 'UNRATE', 
+    'GDPC1', 'VIXCLS', 'WALCL'
+]
 
-fred = Fred(api_key=FRED_API_KEY)
+def ingest_to_gcs():
+    # 1. Initialize Clients
+    fred = Fred(api_key=FRED_API_KEY)
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
-indicators = {
-    'FEDFUNDS': 'fed_funds_rate',
-    'CPIAUCSL': 'cpi',
-    'GDPC1': 'real_gdp',
-    'UNRATE': 'unemployment_rate',
-    'WALCL': 'fed_balance_sheet',
-    'VIXCLS': 'vix'
-}
+    print(f"Starting ingestion to bucket: {GCS_BUCKET_NAME}")
 
-def ingest_macro_data():
-    os.makedirs(raw_path, exist_ok=True)
-    
-    for series_id, clean_name in indicators.items():
-        print(f"Fetching {series_id}...")
+    for series_id in SERIES_LIST:
         try:
+            # 2. Fetch from FRED
+            print(f"Fetching {series_id}...")
             data = fred.get_series(series_id)
-            df = data.to_frame(name='value')
+            
+            # 3. Process into DataFrame
+            df = pd.DataFrame(data, columns=['value'])
             df.index.name = 'date'
-            df.reset_index(inplace=True)
-            # Save using the robust path
-            df.to_parquet(os.path.join(raw_path, f"{series_id}.parquet"))
+            df = df.reset_index()
+
+            # 4. Convert to Parquet in-memory
+            buffer = io.BytesIO()
+            df.to_parquet(buffer, index=False)
+            buffer.seek(0)
+
+            # 5. Upload to GCS
+            blob_path = f"raw/{series_id}.parquet"
+            blob = bucket.blob(blob_path)
+            blob.upload_from_file(buffer, content_type='application/octet-stream')
+            
+            print(f"✅ Success: {blob_path}")
+
         except Exception as e:
-            print(f"Error {series_id}: {e}")
+            print(f"❌ Failed to ingest {series_id}: {e}")
 
 if __name__ == "__main__":
-    ingest_macro_data()
+    ingest_to_gcs()

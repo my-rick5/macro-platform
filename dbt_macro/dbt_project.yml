@@ -16,7 +16,15 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
+on-run-start:
+  - "INSTALL parquet;"
+  - "LOAD parquet;"
+  # REMOVE the CREATE SECRET line entirely
+
 models:
   macro_ops:
     # This applies the 'view' setting to everything in the models/ folder
     +materialized: table
+
+vars:
+  raw_data_path: "gs://macro-engine-warehouse-macroflow-486515/raw"

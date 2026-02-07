@@ -8,3 +8,7 @@ python-dotenv
 dbt-duckdb
 pyarrow
 mlflow
+google-cloud-storage
+gcsfs
+plotly
+streamlit

@@ -1,8 +1,8 @@
-macro_ops:  # Or whatever you named your project
+macro_ops:
   outputs:
     dev:
       type: duckdb
-      path: '/app/data/macro_warehouse.db' # This puts the DB in your project folder
+      path: /app/data/macro_warehouse.duckdb  # This writes to your Mac's ./data folder
       extensions:
         - httpfs
         - parquet

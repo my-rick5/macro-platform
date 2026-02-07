@@ -1,0 +1,8 @@
+streamlit
+polars
+plotly
+google-cloud-storage
+python-dotenv
+pandas
+pyarrow
+gcsfs
