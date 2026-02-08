@@ -1,0 +1,12 @@
+# --- Core Math & Data ---
+numpy
+pandas
+scipy
+# cvxopt  # (If you're using it for optimization)
+
+# --- CI/CD & Testing ---
+pytest
+pytest-mock
+
+# --- Infrastructure ---
+# google-cloud-storage (If you're pulling macro data from GCP)
