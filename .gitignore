@@ -1,17 +1,34 @@
-# Jenkins data
+# === Jenkins ===
+# Do not commit your local Jenkins data or the admin password
 jenkins_home/
 
-# Python junk
+# === Terraform ===
+# Ignore the provider binaries (100MB+) and state files containing secrets
+infra/terraform/.terraform/
+infra/terraform/*.tfstate*
+.terraform.lock.hcl
+
+# === Python & Environment ===
 __pycache__/
 *.py[cod]
 *$py.class
 venv/
 .env
+.pytest_cache/
+*.swp
 
-# Data & dbt artifacts
+# === Data & Large Artifacts ===
+# Ignore local backtest results and dbt outputs
 data/
 target/
 logs/
+results/
+*.parquet
+*.csv
 
-# OS junk
+# === Docker ===
+.docker/
+
+# === OS Junk ===
 .DS_Store
+Thumbs.db

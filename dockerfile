@@ -35,21 +35,15 @@ RUN pip3 install --upgrade pip && \
     "scipy>=1.10,<1.14"
 
 # 3. Build scikit-umfpack 0.4.1 from source
-# Using 0.4.1 to avoid specific SWIG bugs found in 0.4.2
 RUN CFLAGS="-I/usr/include/suitesparse" \
     pip3 install scikit-umfpack==0.4.1 \
     --user \
     --no-build-isolation
 
-# 4. Install the core data-science and modeling stack
-RUN pip3 install --user \
-    "pandas<2.1.0" \
-    gcsfs \
-    pyarrow \
-    sympy \
-    symengine \
-    lxml \
-    networkx
+# 4. Install requirements (Pandas, Pytest, SymPy, etc.)
+# We COPY this here so the builder can resolve all dependencies at once
+COPY requirements.txt .
+RUN pip3 install --user -r requirements.txt
 
 # --- STAGE 2: Final Runtime (Minimal Environment) ---
 FROM debian:11-slim
@@ -57,7 +51,7 @@ FROM debian:11-slim
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install shared runtime libraries only (keeps the image size down)
+# Install shared runtime libraries and JRE
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-11-jre-headless \
     python3 \
@@ -75,13 +69,18 @@ RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 COPY --from=builder /root/.local /home/spark/.local
 COPY pyfrbus /home/spark/pyfrbus
 COPY src /home/spark/src
+COPY tests /home/spark/tests
 
 # Fix permissions
 RUN chown -R spark:spark /home/spark
 
 # Environment Configuration
-# Adding /home/spark ensures 'import pyfrbus' works from the src directory
-# Environment Configuration
-# Adding /home/spark ensures 'import pyfrbus' works from the src directory
+# Python 3.9 is the default for Debian 11
 ENV PYTHONPATH="/home/spark/.local/lib/python3.9/site-packages:/home/spark:${PYTHONPATH}" \
     PATH="/home/spark/.local/bin:${PATH}"
+
+WORKDIR /home/spark
+USER spark
+
+# Default command (can be overridden by Jenkins sh commands)
+CMD ["python3", "src/main.py"]

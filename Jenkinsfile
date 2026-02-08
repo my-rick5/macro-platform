@@ -22,6 +22,14 @@ pipeline {
             }
         }
 
+        stage('Math & Boundary Tests') {
+            steps {
+                echo "Running logic tests for macro edge cases..."
+                // This runs pytest inside the container we just built
+                sh "docker run --rm macro-engine-local:latest pytest tests/test_boundaries.py"
+            }
+        }
+
         stage('Smoke Test') {
             steps {
                 echo 'Verifying UMFPACK and pyfrbus...'
