@@ -23,6 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
+WORKDIR /build
+
 # 2. Pre-install build backends and core math libraries
 # NOTE: NumPy < 2.0.0 is required for scikit-umfpack 0.4.x compatibility
 RUN pip3 install --upgrade pip && \
@@ -41,9 +43,9 @@ RUN CFLAGS="-I/usr/include/suitesparse" \
     --no-build-isolation
 
 # 4. Install requirements (Pandas, Pytest, SymPy, etc.)
-# We COPY this here so the builder can resolve all dependencies at once
 COPY requirements.txt .
 RUN pip3 install --user -r requirements.txt
+
 
 # --- STAGE 2: Final Runtime (Minimal Environment) ---
 FROM debian:11-slim
@@ -75,12 +77,12 @@ COPY tests /home/spark/tests
 RUN chown -R spark:spark /home/spark
 
 # Environment Configuration
-# Python 3.9 is the default for Debian 11
+# Fixed the UndefinedVar warning by ensuring proper variable expansion
 ENV PYTHONPATH="/home/spark/.local/lib/python3.9/site-packages:/home/spark:${PYTHONPATH}" \
     PATH="/home/spark/.local/bin:${PATH}"
 
 WORKDIR /home/spark
 USER spark
 
-# Default command (can be overridden by Jenkins sh commands)
+# Default command
 CMD ["python3", "src/engine.py"]

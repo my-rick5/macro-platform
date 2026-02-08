@@ -37,7 +37,7 @@ pipeline {
         stage('Dry Run') {
             steps {
                 echo "Running a sample simulation task..."
-                sh "docker run --rm -e CLOUD_RUN_TASK_INDEX=0 ${IMAGE_NAME}:latest python3 src/engine.py"
+                sh "docker run --rm -v ${WORKSPACE}/results:/home/spark/results -e CLOUD_RUN_TASK_INDEX=0 ${IMAGE_NAME}:latest python3 src/engine.py"
             }
         }
     } // <--- This was the missing closing brace for 'stages'
