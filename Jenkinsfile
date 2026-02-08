@@ -18,9 +18,13 @@ pipeline {
         }
         stage('Fetch Macro Data') {
             steps {
-                echo "Pulling latest Tealbook projections..."
-                // Run the fetcher on the Jenkins agent
-                sh "python3 src/fetch_tealbook.py"
+                echo "Pulling latest Tealbook projections inside Docker..."
+                sh """
+                    docker run --rm \
+                    -u \$(id -u):\$(id -g) \
+                    -v ${WORKSPACE}/data:/home/spark/data \
+                    macro-engine-local:latest python3 src/fetch_tealbook.py
+                """
             }
         }
         stage('Unit Tests') {
