@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DEB_PYTHON_INSTALL_LAYOUT=standard \
     PATH="/root/.local/bin:${PATH}"
 
-# 1. Install system dependencies + Build Tools for SciPy/UMFPACK stack
+# 1. Install system dependencies + Build Tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 
 # 2. Pre-install build backends and core math libraries
-# NOTE: NumPy < 2.0.0 is required for scikit-umfpack 0.4.x compatibility
+# Added openpyxl for Tealbook Excel processing
 RUN pip3 install --upgrade pip && \
     pip3 install --user \
     setuptools \
@@ -34,7 +34,8 @@ RUN pip3 install --upgrade pip && \
     "meson-python>=0.11" \
     "meson>=1.0" \
     "numpy<2.0.0" \
-    "scipy>=1.10,<1.14"
+    "scipy>=1.10,<1.14" \
+    "openpyxl" 
 
 # 3. Build scikit-umfpack 0.4.1 from source
 RUN CFLAGS="-I/usr/include/suitesparse" \
@@ -42,7 +43,7 @@ RUN CFLAGS="-I/usr/include/suitesparse" \
     --user \
     --no-build-isolation
 
-# 4. Install requirements (Pandas, Pytest, SymPy, etc.)
+# 4. Install requirements (Pandas, Pytest, SymPy, Requests, etc.)
 COPY requirements.txt .
 RUN pip3 install --user -r requirements.txt
 
@@ -73,11 +74,11 @@ COPY pyfrbus /home/spark/pyfrbus
 COPY src /home/spark/src
 COPY tests /home/spark/tests
 
-# Fix permissions
-RUN chown -R spark:spark /home/spark
+# Create data and results directories with proper permissions
+RUN mkdir -p /home/spark/data /home/spark/results && \
+    chown -R spark:spark /home/spark
 
 # Environment Configuration
-# Fixed the UndefinedVar warning by ensuring proper variable expansion
 ENV PYTHONPATH="/home/spark/.local/lib/python3.9/site-packages:/home/spark:${PYTHONPATH}" \
     PATH="/home/spark/.local/bin:${PATH}"
 

@@ -1,71 +1,52 @@
 pipeline {
     agent any 
-
     parameters {
-        choice(
-            name: 'BACKTEST_YEAR', 
-            choices: ['2004', '2005', '2006', '2007', '2008', '2024'], 
-            description: 'Select the year to run the backtest simulation.'
-        )
+        choice(name: 'BACKTEST_YEAR', choices: ['2004', '2005', '2006', '2007', '2008', '2024'], description: 'Main branch only.')
     }
-
-    environment {
-        IMAGE_NAME = "macro-engine-local"
-    }
+    environment { IMAGE_NAME = "macro-engine-local" }
 
     stages {
-        stage('Cleanup') {
+        stage('Initialize') {
             steps {
-                echo 'Cleaning up old images to save disk space...'
-                sh "docker rmi ${IMAGE_NAME}:latest || true"
+                sh "mkdir -p results && rm -f results/*.csv"
             }
         }
-
-        stage('Build') {
+        stage('Docker Build') {
             steps {
-                echo 'Building the Docker Image...'
                 sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
-
-        stage('Math & Boundary Tests') {
+        stage('Fetch Macro Data') {
             steps {
-                echo "Running logic tests for macro edge cases..."
-                sh "docker run --rm ${IMAGE_NAME}:latest pytest tests/test_boundaries.py"
+                echo "Pulling latest Tealbook projections..."
+                // Run the fetcher on the Jenkins agent
+                sh "python3 src/fetch_tealbook.py"
             }
         }
-
-        stage('Smoke Test') {
+        stage('Unit Tests') {
             steps {
-                echo 'Verifying UMFPACK and pyfrbus...'
-                sh "docker run --rm ${IMAGE_NAME}:latest python3 -c 'import scikits.umfpack; import numpy; print(\"Math libraries verified!\")'"
+                sh "docker run --rm ${IMAGE_NAME}:latest pytest tests/ --junitxml=results/test-reports.xml"
             }
+            post { always { junit 'results/test-reports.xml' } }
         }
-
-        stage('Dry Run') {
+        stage('Production Simulation') {
+            when { branch 'main' }
             steps {
-                echo "Running a sample simulation task..."
-                // Create results dir and run as current user to avoid Permission Denied
-                sh "mkdir -p results"
-                sh """
-                    docker run --rm \
-                    -u \$(id -u):\$(id -g) \
-                    -v ${WORKSPACE}/results:/home/spark/results \
-                    -e CLOUD_RUN_TASK_INDEX=0 \
-                    ${IMAGE_NAME}:latest python3 src/engine.py
-                """
+                script {
+                    def taskIndex = Integer.parseInt(params.BACKTEST_YEAR) - 2004
+                    sh "docker run --rm -u \$(id -u):\$(id -g) -v ${WORKSPACE}/results:/home/spark/results -e CLOUD_RUN_TASK_INDEX=${taskIndex} ${IMAGE_NAME}:latest python3 src/engine.py"
+                }
             }
         }
     }
-
     post {
         success {
-            echo '✅ Pipeline Complete: Engine is ready for backtesting.'
-            // This makes your CSVs downloadable from the Jenkins Build page
-            archiveArtifacts artifacts: 'results/*.csv', allowEmptyArchive: true, fingerprint: true
+            script {
+                if (env.BRANCH_NAME == 'main') {
+                    archiveArtifacts artifacts: 'results/*.csv', allowEmptyArchive: true
+                }
+            }
         }
-        failure {
-            echo '❌ Pipeline Failed: Check the console output for errors.'
-        }
+        always { sh "docker rmi ${IMAGE_NAME}:latest || true" }
     }
 }

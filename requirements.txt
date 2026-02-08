@@ -2,6 +2,7 @@
 numpy
 pandas
 scipy
+requests
 # cvxopt  # (If you're using it for optimization)
 
 # --- CI/CD & Testing ---
