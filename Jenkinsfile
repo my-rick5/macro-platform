@@ -37,14 +37,24 @@ pipeline {
         stage('Dry Run') {
             steps {
                 echo "Running a sample simulation task..."
-                sh "docker run --rm -v ${WORKSPACE}/results:/home/spark/results -e CLOUD_RUN_TASK_INDEX=0 ${IMAGE_NAME}:latest python3 src/engine.py"
+                // Create results dir and run as current user to avoid Permission Denied
+                sh "mkdir -p results"
+                sh """
+                    docker run --rm \
+                    -u \$(id -u):\$(id -g) \
+                    -v ${WORKSPACE}/results:/home/spark/results \
+                    -e CLOUD_RUN_TASK_INDEX=0 \
+                    ${IMAGE_NAME}:latest python3 src/engine.py
+                """
             }
         }
-    } // <--- This was the missing closing brace for 'stages'
+    }
 
     post {
         success {
             echo '✅ Pipeline Complete: Engine is ready for backtesting.'
+            // This makes your CSVs downloadable from the Jenkins Build page
+            archiveArtifacts artifacts: 'results/*.csv', fingerprint: true
         }
         failure {
             echo '❌ Pipeline Failed: Check the console output for errors.'
