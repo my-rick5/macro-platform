@@ -83,4 +83,4 @@ WORKDIR /home/spark
 USER spark
 
 # Default command (can be overridden by Jenkins sh commands)
-CMD ["python3", "src/main.py"]
+CMD ["python3", "src/engine.py"]

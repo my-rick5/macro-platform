@@ -40,12 +40,10 @@ pipeline {
 
         stage('Dry Run') {
             steps {
-                echo 'Running a sample simulation task...'
-                // Runs Task 0 (Year 2004) as a test
-                sh "docker run --rm -e CLOUD_RUN_TASK_INDEX=0 ${IMAGE_NAME}:latest"
+                echo "Running a sample simulation task..."
+                sh "docker run --rm -e CLOUD_RUN_TASK_INDEX=0 macro-engine-local:latest python3 src/engine.py"
             }
         }
-    }
 
     post {
         success {
