@@ -1,68 +1,50 @@
 pipeline {
-    agent any
+    agent any 
 
     environment {
-        // Automatically detect User ID and Docker Group ID to prevent permission issues
-        AIRFLOW_UID = sh(script: 'id -u', returnStdout: true).trim()
-        DOCKER_GID  = sh(script: "getent group docker | cut -d: -f3 || echo 999", returnStdout: true).trim()
+        IMAGE_NAME = "macro-engine-local"
     }
 
     stages {
-        stage('Cleanup & Build') {
+        stage('Cleanup') {
             steps {
-                echo "Cleaning up old containers and building the Macro Engine..."
-                // Stop containers but keep volumes so MLflow and Airflow DB persist
-                sh 'docker compose stop || true'
-                sh 'docker compose build macro-engine'
+                echo 'Cleaning up old images to save disk space...'
+                // Removes the previous build so your hard drive doesn't fill up
+                sh "docker rmi ${IMAGE_NAME}:latest || true"
             }
         }
 
-        stage('Initialize Airflow') {
+        stage('Build') {
             steps {
-                echo "Setting up Airflow environment..."
-                sh '''
-                    # Create host directories for Airflow persistence
-                    mkdir -p dags logs plugins
-                    
-                    # Ensure Postgres is up before initializing
-                    docker compose up -d postgres
-                    
-                    # Initialize Airflow Metadata Database
-                    docker compose run --rm airflow-webserver airflow db init
-                    
-                    # Create Admin User (admin/admin) - ignore error if user exists
-                    docker compose run --rm airflow-webserver \
-                        airflow users create \
-                        --username admin \
-                        --password admin \
-                        --firstname Zach \
-                        --lastname Myrick \
-                        --role Admin \
-                        --email zach@example.com || true
-                '''
+                echo 'Building the Docker Image...'
+                // This builds your local engine
+                sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
 
-        stage('Deploy Stack') {
+        stage('Smoke Test') {
             steps {
-                echo "Launching Full Stack..."
-                sh 'docker compose up -d'
-                
-                script {
-                    echo "========================================================="
-                    echo "DEPLOYMENT SUCCESSFUL"
-                    echo "Jenkins UI:   http://localhost:8080"
-                    echo "Airflow UI:   http://localhost:8085 (User: admin / Pass: admin)"
-                    echo "MLflow UI:    http://localhost:5000"
-                    echo "========================================================="
-                }
+                echo 'Verifying UMFPACK and pyfrbus...'
+                // This runs a quick internal check to ensure the math libs are alive
+                sh "docker run --rm ${IMAGE_NAME}:latest python3 -c 'import scikits.umfpack; import numpy; print(\"Math libraries verified!\")'"
+            }
+        }
+
+        stage('Dry Run') {
+            steps {
+                echo 'Running a sample simulation task...'
+                // Runs Task 0 (Year 2004) as a test
+                sh "docker run --rm -e CLOUD_RUN_TASK_INDEX=0 ${IMAGE_NAME}:latest"
             }
         }
     }
 
     post {
+        success {
+            echo '✅ Pipeline Complete: Engine is ready for backtesting.'
+        }
         failure {
-            echo "Deployment failed. Run 'docker compose logs' on the server to debug."
+            echo '❌ Pipeline Failed: Check the console output for errors.'
         }
     }
 }

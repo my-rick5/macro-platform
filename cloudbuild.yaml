@@ -1,0 +1,22 @@
+steps:
+  # Build the Engine image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Build Engine'
+    args: [
+      'build', 
+      '-t', 'gcr.io/$PROJECT_ID/pyfrbus-engine:latest',
+      '-t', 'gcr.io/$PROJECT_ID/pyfrbus-engine:$SHORT_SHA',
+      '.'
+    ]
+
+  # Push the Engine image to GCR
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Push Engine'
+    args: ['push', 'gcr.io/$PROJECT_ID/pyfrbus-engine']
+
+images:
+  - 'gcr.io/$PROJECT_ID/pyfrbus-engine:latest'
+  - 'gcr.io/$PROJECT_ID/pyfrbus-engine:$SHORT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

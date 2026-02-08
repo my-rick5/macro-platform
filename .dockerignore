@@ -1,0 +1,23 @@
+# Python/OS junk
+**/__pycache__/
+*.py[cod]
+*.class
+.env
+.venv/
+venv/
+.DS_Store
+
+# Infrastructure (managed separately)
+terraform/
+.terraform/
+terraform.tfstate*
+k8s/
+Jenkinsfile
+jenkins_home/
+
+# Data and Logs
+logs/
+mlruns/
+output/
+data/
+*.json
