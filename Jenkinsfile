@@ -1,6 +1,14 @@
 pipeline {
     agent any 
 
+    parameters {
+        choice(
+            name: 'BACKTEST_YEAR', 
+            choices: ['2004', '2005', '2006', '2007', '2008', '2024'], 
+            description: 'Select the year to run the backtest simulation.'
+        )
+    }
+
     environment {
         IMAGE_NAME = "macro-engine-local"
     }
@@ -54,7 +62,7 @@ pipeline {
         success {
             echo '✅ Pipeline Complete: Engine is ready for backtesting.'
             // This makes your CSVs downloadable from the Jenkins Build page
-            archiveArtifacts artifacts: 'results/*.csv', fingerprint: true
+            archiveArtifacts artifacts: 'results/*.csv', allowEmptyArchive: true, fingerprint: true
         }
         failure {
             echo '❌ Pipeline Failed: Check the console output for errors.'
