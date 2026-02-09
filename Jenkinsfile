@@ -8,16 +8,14 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "🧹 Performing a deep clean for Build #53..."
+                echo "🧹 Targeted cleanup: Only killing macro-engine containers..."
                 script {
-                    // Remove existing containers and prune volumes to ensure a clean room
-                    sh "docker ps -a -q -f status=exited -f status=running | xargs -r docker rm -f"
-                    sh "docker volume prune -f"
+                    // SAFETY FILTER: This specifically only targets the engine image.
+                    // It will NOT see or kill the 'jenkins/jenkins' container.
+                    sh "docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f"
                     
-                    // Recreate workspace directories
-                    sh "rm -rf ${WORKSPACE}/data ${WORKSPACE}/results ${WORKSPACE}/models ${WORKSPACE}/external_data"
-                    sh "mkdir -p ${WORKSPACE}/data ${WORKSPACE}/results ${WORKSPACE}/models ${WORKSPACE}/external_data"
-                    sh "chmod -R 777 ${WORKSPACE}/data ${WORKSPACE}/results ${WORKSPACE}/models"
+                    sh "docker volume prune -f --filter 'label!=keep'"
+                    sh "mkdir -p ${WORKSPACE}/results ${WORKSPACE}/models"
                 }
             }
         }
@@ -36,13 +34,12 @@ pipeline {
         stage('Run Engine') {
             steps {
                 echo "🧪 Running Structural Validation..."
-                // Validate the XML before starting the heavy simulation
                 sh "docker run --rm --user 0:0 -v ${WORKSPACE}:/home/spark ${DOCKER_IMAGE} pytest tests/test_model_load.py"
                 
                 echo "🚀 Running Engine: Solving for Add Factors (e)..."
                 sh """
                     docker run --rm --user 0:0 \
-                    --memory='4g' --memory-swap='4g' \
+                    --memory='6g' --memory-swap='6g' \
                     -v ${WORKSPACE}/data:/home/spark/data \
                     -v ${WORKSPACE}/results:/home/spark/results \
                     -v ${WORKSPACE}/models:/home/spark/models \
@@ -50,7 +47,7 @@ pipeline {
                 """
             }
         }
-    }
+    } // End of Stages
 
     post {
         always {
@@ -66,4 +63,4 @@ pipeline {
             echo "❌ Build Failed. Check console for SolverStalled or Hardware Guard errors."
         }
     }
-} // This is the final brace that was missing in build #54
+}
