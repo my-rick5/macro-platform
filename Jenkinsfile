@@ -37,10 +37,10 @@ pipeline {
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/models/model.xml /home/spark/models/model.xml
-                    
-                        # 5. Cleanup
-                        docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
-                    """
+
+                        # 5. CRITICAL CLEANUP: Remove the stray folder that is shadowing our package
+                        docker exec ${CONTAINER_NAME} rm -rf /home/spark/pyfrbus
+                        docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus                    """
 
 
 
