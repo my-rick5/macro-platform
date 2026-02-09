@@ -36,15 +36,14 @@ pipeline {
         stage('Run Engine') {
             steps {
                 echo "🧪 Running Structural Validation..."
-                sh "docker run --rm --user 0:0 -v ${WORKSPACE}:/home/spark ${DOCKER_IMAGE} pytest tests/test_model_load.py"
+                // Use python3 -m pytest to ensure it finds the library
+                sh "docker run --rm --user 0:0 -v ${WORKSPACE}:/home/spark ${DOCKER_IMAGE} python3 -m pytest tests/test_model_load.py"
                 
                 echo "🚀 Running Engine: Solving for Add Factors (e)..."
                 sh """
                     docker run --rm --user 0:0 \
                     --memory='6g' --memory-swap='6g' \
-                    -v ${WORKSPACE}/data:/home/spark/data \
-                    -v ${WORKSPACE}/results:/home/spark/results \
-                    -v ${WORKSPACE}/models:/home/spark/models \
+                    -v ${WORKSPACE}:/home/spark \
                     ${DOCKER_IMAGE} python3 src/engine.py
                 """
             }
