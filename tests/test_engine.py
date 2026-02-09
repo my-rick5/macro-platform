@@ -24,11 +24,11 @@ def test_engine_uses_tealbook_value(mock_exists, mock_read_csv, mock_tealbook_da
     assert os.path.exists(output_file)
     
     res = pd.read_csv(output_file)
-    assert res['target_unemployment'].iloc[0] == 5.5
+    assert res['RUC'].iloc[0] == 5.5
 
 @patch('src.engine.os.path.exists')
 def test_engine_fallback(mock_exists):
     mock_exists.return_value = False
     run_backtest_chunk(1) # 2005
     res = pd.read_csv("/home/spark/results/backtest_2005.csv")
-    assert res['target_unemployment'].iloc[0] == 5.0
+    assert res['RUC'].iloc[0] == 5.0
