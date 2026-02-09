@@ -56,7 +56,7 @@ pipeline {
                     echo "🧪 Running Structural Validation..."
                     sh """
                         docker exec -e PYTHONPATH=/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages \
-                        engine-run-145 python3 -c 'from pyfrbus import Frbus; m = Frbus("/home/spark/models/model.xml"); print("AVAILABLE ATTRS:", [a for a in dir(m) if not a.startswith("__")])'
+                        sh "docker exec -e PYTHONPATH=/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages engine-run-${env.BUILD_NUMBER} python3 -c 'from pyfrbus import Frbus; m = Frbus(\"/home/spark/models/model.xml\"); print(\"AVAILABLE ATTRS:\", [a for a in dir(m) if not a.startswith(\"_\")])'"
                     """
 
                     echo "🕵️ Discovery Mode: Pulling internal attribute names..."
