@@ -19,10 +19,13 @@ pipeline {
             steps {
                 script {
                     echo "🧪 Preparing Container & Data..."
+                    // Start container in detached mode
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
+                    
+                    // Copy the workspace into the container
                     sh "docker cp . ${CONTAINER_NAME}:/workspace"
                     
-                    // Note: We use the spark user's home path for the library
+                    // Setup internal directory structure
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         docker exec ${CONTAINER_NAME} cp /workspace/pyfrbus/models/model.xml /home/spark/models/model.xml
@@ -30,7 +33,7 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // We add -e PYTHONPATH to ensure the installed pyfrbus is visible
+                    // We set PYTHONPATH so it can find the pyfrbus package installed in the image
                     sh """
                         docker exec -w /workspace \
                         -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/workspace \
@@ -49,11 +52,16 @@ pipeline {
                 }
             }
         }
+    } // End of Stages
 
     post {
         always {
-            sh "docker rm -f ${CONTAINER_NAME} || true"
+            script {
+                echo "🧹 Cleaning up container..."
+                sh "docker rm -f ${CONTAINER_NAME} || true"
+            }
+            echo "📦 Archiving Results..."
             archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
         }
     }
-}
+} // End of Pipeline
