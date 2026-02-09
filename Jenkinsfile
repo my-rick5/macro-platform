@@ -8,10 +8,13 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "🧹 Targeted cleanup..."
+                echo "🧹 Targeted cleanup & Prepping Build Tools..."
                 script {
                     sh "docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f"
                     sh "mkdir -p results models"
+                    
+                    // Install GCC and SuiteSparse inside the container environment
+                    // We run this as a separate 'prep' step or include it in the Run stage
                 }
             }
         }
@@ -35,22 +38,16 @@ pipeline {
                         -v jenkins_home:/var/jenkins_home \
                         -w /var/jenkins_home/${workspaceRelPath} \
                         -e PYTHONPATH=. \
-                        ${DOCKER_IMAGE} bash -c 'pip install pytest && pip install -e pyfrbus/ && python3 -m pytest tests/test_model_load.py'
-                    """
-                    
-                    echo "🚀 Running Engine: Solving for Add Factors (e)..."
-                    sh """
-                        docker run --rm --user 0:0 \
-                        --memory='6g' --memory-swap='6g' \
-                        -v jenkins_home:/var/jenkins_home \
-                        -w /var/jenkins_home/${workspaceRelPath} \
-                        -e PYTHONPATH=. \
-                        ${DOCKER_IMAGE} python3 src/engine.py
+                        ${DOCKER_IMAGE} bash -c '
+                            apt-get update && apt-get install -y gcc libsuitesparse-dev && \
+                            pip install pytest && \
+                            pip install -e pyfrbus/ && \
+                            python3 -m pytest tests/test_model_load.py
+                        '
                     """
                 }
             }
         }
-    }
 
     post {
         always {
