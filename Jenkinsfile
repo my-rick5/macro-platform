@@ -22,29 +22,31 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Ultimate Structural Fix & Dependency Install..."
+                    echo "📦 Global Dependency & Path Alignment..."
                     sh """
-                        # 1. Install dependencies using the setup.py before we move things
-                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
+                        # 1. Force a SYSTEM-WIDE install (no --user flag)
+                        docker exec -u 0 -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
                         
-                        # 2. Set up the clean library path
+                        # 2. Setup the library home
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/pyfrbus_lib
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus/. /opt/pyfrbus_lib/
                         
-                        # 3. Remove the source to prevent shadowing
+                        # 3. Aggressive cleanup
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
-                    echo "🔧 Safety Check: Verifying Direct Module Import..."
+                    echo "🔧 Safety Check: Verifying Global Visibility..."
                     sh """
                         docker exec -e PYTHONPATH=/opt/pyfrbus_lib \
-                        ${CONTAINER_NAME} python3 -c 'import frbus; print(\"✅ Module Import Success!\")'
+                        ${CONTAINER_NAME} python3 -c 'import pandas; import frbus; print(\"✅ System-wide Success!\")'
                     """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         docker exec ${CONTAINER_NAME} cp /opt/pyfrbus_lib/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
+                        # Ensure the spark user can read the results of our root-level work
+                        docker exec ${CONTAINER_NAME} chmod -R 777 /home/spark /opt/pyfrbus_lib
                     """
 
                     echo "🧪 Running Structural Validation..."
