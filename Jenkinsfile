@@ -8,27 +8,31 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                sh "mkdir -p results models"
-                // Clean up any dangling containers from previous failed runs
-                sh "docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f"
+                echo "🧹 Prepping Host Directories & Debugging Layout..."
+                sh """
+                    mkdir -p results models data
+                    echo "--- Workspace Tree ---"
+                    ls -R
+                    docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f
+                """
             }
         }
 
         stage('Fetch Model Logic') {
             steps {
                 echo "🧠 Preparing model.xml..."
-                sh "cp pyfrbus/models/model.xml ./model.xml"
+                // Ensures the model is in the folder we are about to mount
+                sh "cp pyfrbus/models/model.xml models/model.xml"
             }
         }
 
         stage('Run Engine') {
             steps {
                 script {
-                    // hostPath is the Jenkins workspace on the server
                     def hostPath = WORKSPACE 
                     
                     echo "🧪 Running Structural Validation..."
-                    // We mount the workspace to /workspace inside the container
+                    // Mounts the whole workspace so pytest can see everything
                     sh """
                         docker run --rm \
                         -v ${hostPath}:/workspace \
@@ -37,7 +41,7 @@ pipeline {
                     """
         
                     echo "🚀 Running Engine..."
-                    // We mount only the needed folders so we don't overwrite /home/spark/.local
+                    // Selective mounts to avoid overwriting /home/spark/.local
                     sh """
                         docker run --rm \
                         --memory='6g' \
@@ -50,10 +54,12 @@ pipeline {
                 }
             }
         }
+    } // <--- Added missing closing brace for stages
 
     post {
         always {
+            echo "📦 Archiving Results..."
             archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
         }
     }
-}
+} // <--- Added missing closing brace for pipeline
