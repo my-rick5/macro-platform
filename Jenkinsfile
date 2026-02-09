@@ -8,7 +8,6 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "🧹 Prepping Directories..."
                 sh """
                     mkdir -p results models data
                     docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f
@@ -18,7 +17,6 @@ pipeline {
 
         stage('Fetch Model Logic') {
             steps {
-                echo "🧠 Syncing Model & Data..."
                 sh """
                     cp pyfrbus/models/model.xml models/model.xml
                     cp data/tealbook_unemployment.csv data/y_unemp.csv
@@ -29,28 +27,24 @@ pipeline {
         stage('Run Engine') {
             steps {
                 script {
-                    def hostPath = WORKSPACE 
-                    
                     echo "🧪 Running Structural Validation..."
+                    
+                    // Using $(pwd) inside the shell string is more reliable for 
+                    // Docker-in-Docker setups than the Jenkins WORKSPACE variable.
                     sh """
                         docker run --rm --user 0:0 \
-                        -v ${hostPath}:/workspace \
+                        -v \$(pwd):/workspace \
                         -w /workspace \
-                        ${DOCKER_IMAGE} bash -c '
-                            echo "👤 User: \$(whoami)" && \
-                            echo "📍 Dir: \$(pwd)" && \
-                            echo "📂 Files in tests/:" && ls -l tests/ && \
-                            python3 -m pytest tests/test_model_load.py
-                        '
+                        ${DOCKER_IMAGE} python3 -m pytest tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker run --rm \
                         --memory='6g' \
-                        -v ${hostPath}/models:/home/spark/models \
-                        -v ${hostPath}/data:/home/spark/data \
-                        -v ${hostPath}/results:/home/spark/results \
+                        -v \$(pwd)/models:/home/spark/models \
+                        -v \$(pwd)/data:/home/spark/data \
+                        -v \$(pwd)/results:/home/spark/results \
                         -w /home/spark \
                         ${DOCKER_IMAGE} python3 src/engine.py
                     """
@@ -61,7 +55,6 @@ pipeline {
 
     post {
         always {
-            echo "📦 Archiving Results..."
             archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
         }
     }
