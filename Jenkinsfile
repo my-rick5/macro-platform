@@ -36,10 +36,10 @@ pipeline {
         stage('Run Engine') {
             steps {
                 echo "🧪 Running Structural Validation..."
-                // Added pip install to ensure pytest exists inside the container
                 sh """
                     docker run --rm --user 0:0 \
                     -v ${WORKSPACE}:/home/spark \
+                    -w /home/spark \
                     ${DOCKER_IMAGE} bash -c "pip install pytest && python3 -m pytest tests/test_model_load.py"
                 """
                 
@@ -48,6 +48,7 @@ pipeline {
                     docker run --rm --user 0:0 \
                     --memory='6g' --memory-swap='6g' \
                     -v ${WORKSPACE}:/home/spark \
+                    -w /home/spark \
                     ${DOCKER_IMAGE} python3 src/engine.py
                 """
             }
