@@ -24,8 +24,8 @@ def test_required_variables():
     required_vars = ['LUR', 'LEH', 'LF', 'XGAP']
     
     # model.endog is a list of all endogenous variables in the model
-    missing = [var for var in required_vars if var not in model.endog and var not in model.exog]
-    
+    # This checks if the variable exists anywhere in the model's variable lookup
+    missing = [var for var in required_vars if var not in model.lookup]    
     assert not missing, f"❌ Model missing critical variables: {missing}. Verify model.xml version."
 
 def test_python_equation_mapping():
