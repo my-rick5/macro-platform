@@ -20,29 +20,24 @@ pipeline {
                 script {
                     echo "🧪 Preparing Container & Data..."
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
-                    
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Final Flattening & System Install..."
+                    echo "📦 Installing & De-conflicting..."
                     sh """
-                        # Create a completely fresh flat source
-                        docker exec ${CONTAINER_NAME} mkdir -p /tmp/flat_lib/pyfrbus
-                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/setup.py /tmp/flat_lib/
-                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus/. /tmp/flat_lib/pyfrbus/
+                        # Install the package formally
+                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
                         
-                        # Perform a standard install (NOT editable)
-                        docker exec -w /tmp/flat_lib ${CONTAINER_NAME} python3 -m pip install .
+                        # RENAME the repo folder to prevent shadowing/confusion
+                        docker exec ${CONTAINER_NAME} mv /source_code/pyfrbus /source_code/pyfrbus_repo_folder
                     """
 
-                    echo "🔧 Safety Check: Verifying Import..."
-                    // We will now check where Python is actually looking
-                    sh """
-                        docker exec ${CONTAINER_NAME} python3 -c "import sys; print('Search Paths:', sys.path); import pyfrbus; print('✅ Package found at:', pyfrbus.__file__)"
-                    """
+                    echo "🔧 Safety Check: Verifying Global Import..."
+                    sh "docker exec ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Global Import Success!\")'"
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/models/model.xml /home/spark/models/model.xml
+                        # Note the new path for the model file
+                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus_repo_folder/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                     """
 
