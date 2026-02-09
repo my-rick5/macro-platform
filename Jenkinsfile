@@ -24,19 +24,12 @@ pipeline {
 
                     echo "📦 Ultimate Structural Fix..."
                     sh """
-                        # Create a clean target
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/pyfrbus_lib
-                        
-                        # Copy the INNERMOST folder contents directly to the target
-                        # This puts frbus.py directly at /opt/pyfrbus_lib/frbus.py
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus/. /opt/pyfrbus_lib/
-                        
-                        # Clean up
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
                     echo "🔧 Safety Check: Verifying Direct Module Import..."
-                    # We now import 'frbus' directly because it's at the root of the PYTHONPATH
                     sh """
                         docker exec -e PYTHONPATH=/opt/pyfrbus_lib \
                         ${CONTAINER_NAME} python3 -c 'import frbus; print(\"✅ Module Import Success!\")'
