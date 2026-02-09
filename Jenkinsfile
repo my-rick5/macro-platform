@@ -12,25 +12,26 @@ pipeline {
         }
         stage('Process Data') {
             steps {
-                echo "📦 Injecting Data via Docker CP..."
+                echo "📦 Injecting Data via Docker CP (No Volumes)..."
                 
-                // 1. Remove existing container if it exists to avoid the name conflict
+                // 1. Clean up and create fresh
                 sh "docker rm -f macro_processor || true"
+                sh "docker create --name macro_processor --user 0:0 macro-engine-local:latest tail -f /dev/null"
                 
-                // 2. Create the new container
-                sh "docker create --name macro_processor --user 0:0 macro-engine-local:latest"
-                
-                // 3. Push the Excel file into the container
+                // 2. Push the file into the container
                 sh "docker cp external_data/GBweb_Row_Format.xlsx macro_processor:/tmp/source_data.xlsx"
                 
-                // 4. Run the conversion script
+                // 3. Start it and run the conversion logic
+                sh "docker start macro_processor"
                 sh """
-                    docker run --rm --user 0:0 \
-                    -v ${WORKSPACE}/external_data/GBweb_Row_Format.xlsx:/tmp/source_data.xlsx \
-                    -v ${WORKSPACE}/data:/tmp/output_data \
-                    macro-engine-local:latest \
-                    python3 -c "import pandas as pd; df = pd.read_excel('/tmp/source_data.xlsx', sheet_name='UNEMP'); df.to_csv('/tmp/output_data/tealbook_unemployment.csv', index=False); print('✅ Success: CSV generated')"
+                    docker exec macro_processor python3 -c "import pandas as pd; df = pd.read_excel('/tmp/source_data.xlsx', sheet_name='UNEMP'); df.to_csv('/tmp/tealbook_unemployment.csv', index=False); print('✅ Success: CSV generated')"
                 """
+                
+                // 4. Pull the result back out to the host
+                sh "docker cp macro_processor:/tmp/tealbook_unemployment.csv data/tealbook_unemployment.csv"
+                
+                // 5. Cleanup
+                sh "docker rm -f macro_processor"
                 
                 sh "chown -R \$(id -u):\$(id -g) data results || true"
             }
