@@ -22,6 +22,20 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/workspace"
                     
+                    echo "🔍 DEBUG: Locating Python Packages..."
+                    sh """
+                        docker exec ${CONTAINER_NAME} bash -c '
+                            echo "--- Python Sys Path ---"
+                            python3 -c "import sys; print(\"\\n\".join(sys.path))"
+                            
+                            echo "--- Pip List (Internal) ---"
+                            pip list | grep pyfrbus || echo "pyfrbus NOT FOUND IN PIP"
+                            
+                            echo "--- File Search for pyfrbus ---"
+                            find /home/spark -name "frbus.py" | head -n 5
+                        '
+                    """
+
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         docker exec ${CONTAINER_NAME} cp /workspace/pyfrbus/models/model.xml /home/spark/models/model.xml
@@ -29,8 +43,6 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // We point to the local site-packages AND the workspace root
-                    // But we run pytest from the root to ensure it picks up the installed version
                     sh """
                         docker exec -w /workspace \
                         -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/workspace \
@@ -38,7 +50,6 @@ pipeline {
                     """
         
                     echo "🚀 Running Engine..."
-                    // For the main engine, we ensure the installed library is prioritized
                     sh """
                         docker exec -w /home/spark \
                         -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages \
