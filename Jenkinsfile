@@ -22,46 +22,47 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "🔍 Diagnostic: Checking actual file layout..."
-                    sh "docker exec ${CONTAINER_NAME} ls -R /source_code/pyfrbus"
-
-                    echo "📦 Manual Library Deployment..."
+                    echo "📦 Final Structural Alignment..."
                     sh """
-                        # We are going to put the library at the root of the search path
-                        docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_lib
+                        # Create the library home
+                        docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         
-                        # Copy the ENTIRE pyfrbus contents to the new lib home
-                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/. /opt/macro_lib/
+                        # Move the MIDDLE pyfrbus folder (the one containing the actual code) 
+                        # to the library home.
+                        # This makes /opt/macro_platform/pyfrbus the package root.
+                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /opt/macro_platform/
                         
-                        # Cleanup to prevent shadowing
+                        # Remove the messy source folder
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
-                    echo "🔧 Safety Check: Verifying with Recursive Path..."
-                    // We try two common path variations to see which one sticks
+                    echo "🔧 Safety Check: Verifying Global Import..."
+                    # We point PYTHONPATH to /opt/macro_platform. 
+                    # Python will find the 'pyfrbus' folder inside it and treat it as a package.
                     sh """
-                        docker exec -e PYTHONPATH=/opt/macro_lib:/opt/macro_lib/pyfrbus \
-                        ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Manual Import Success!\")'
+                        docker exec -e PYTHONPATH=/opt/macro_platform \
+                        ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Global Import Success!\")'
                     """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        # Find the model.xml wherever it ended up
-                        docker exec ${CONTAINER_NAME} find /opt/macro_lib -name \"model.xml\" -exec cp {} /home/spark/models/model.xml \\;
+                        # The model.xml was in the top-level repo folder which we just deleted, 
+                        # but it's also inside the inner package structure.
+                        docker exec ${CONTAINER_NAME} cp /opt/macro_platform/pyfrbus/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                     """
 
                     echo "🧪 Running Structural Validation..."
                     sh """
                         docker exec -w /source_code \
-                        -e PYTHONPATH=/opt/macro_lib:/opt/macro_lib/pyfrbus:/source_code \
+                        -e PYTHONPATH=/opt/macro_platform:/source_code \
                         ${CONTAINER_NAME} python3 -m pytest -vv tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/opt/macro_lib:/opt/macro_lib/pyfrbus:/source_code/src \
+                        -e PYTHONPATH=/opt/macro_platform:/source_code/src \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
