@@ -8,11 +8,9 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "🧹 Prepping Host Directories & Debugging Layout..."
+                echo "🧹 Prepping Directories..."
                 sh """
                     mkdir -p results models data
-                    echo "--- Workspace Tree ---"
-                    ls -R
                     docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f
                 """
             }
@@ -20,9 +18,11 @@ pipeline {
 
         stage('Fetch Model Logic') {
             steps {
-                echo "🧠 Preparing model.xml..."
-                // Ensures the model is in the folder we are about to mount
-                sh "cp pyfrbus/models/model.xml models/model.xml"
+                echo "🧠 Syncing Model & Data..."
+                sh """
+                    cp pyfrbus/models/model.xml models/model.xml
+                    cp data/tealbook_unemployment.csv data/y_unemp.csv
+                """
             }
         }
 
@@ -32,20 +32,20 @@ pipeline {
                     def hostPath = WORKSPACE 
                     
                     echo "🧪 Running Structural Validation..."
-                    // Added --user 0:0 to fix the Permission Denied/Errno 13 issue
                     sh """
                         docker run --rm --user 0:0 \
                         -v ${hostPath}:/workspace \
                         -w /workspace \
-                        ${DOCKER_IMAGE} python3 -m pytest /workspace/tests/test_model_load.py
+                        ${DOCKER_IMAGE} bash -c '
+                            echo "👤 User: \$(whoami)" && \
+                            echo "📍 Dir: \$(pwd)" && \
+                            echo "📂 Files in tests/:" && ls -l tests/ && \
+                            python3 -m pytest tests/test_model_load.py
+                        '
                     """
         
                     echo "🚀 Running Engine..."
-                    // The engine runs as the default 'spark' user 
-                    // We also ensure the data file name matches your engine.py (y_unemp.csv)
                     sh """
-                        cp data/tealbook_unemployment.csv data/y_unemp.csv
-                        
                         docker run --rm \
                         --memory='6g' \
                         -v ${hostPath}/models:/home/spark/models \
@@ -57,7 +57,7 @@ pipeline {
                 }
             }
         }
-    } // <--- Added missing closing brace for stages
+    }
 
     post {
         always {
@@ -65,4 +65,4 @@ pipeline {
             archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
         }
     }
-} // <--- Added missing closing brace for pipeline
+}
