@@ -20,10 +20,12 @@ pipeline {
                 script {
                     echo "🧪 Preparing Container & Data..."
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
-                    sh "docker cp . ${CONTAINER_NAME}:/source_code"
                     
-                    // Keep the editable install - it's handling the dependencies (sympy, etc.) perfectly
-                    sh "docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e ."
+                    // 1. Copy the library source directly to /home/spark to match the image's expectation
+                    sh "docker cp pyfrbus/pyfrbus/. ${CONTAINER_NAME}:/home/spark/pyfrbus/"
+                    
+                    // 2. Copy the rest of the workspace to /source_code for the tests/engine
+                    sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
@@ -32,17 +34,17 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // ADDED: /source_code/pyfrbus to the path to resolve the double-folder import
+                    // Now PYTHONPATH points directly to the folder containing the __init__.py
                     sh """
                         docker exec -w /source_code \
-                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code/pyfrbus:/source_code \
+                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark:/source_code \
                         ${CONTAINER_NAME} python3 -m pytest tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code/pyfrbus:/source_code/src \
+                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark:/source_code/src \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
