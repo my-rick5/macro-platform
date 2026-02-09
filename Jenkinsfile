@@ -36,8 +36,12 @@ pipeline {
         stage('Run Engine') {
             steps {
                 echo "🧪 Running Structural Validation..."
-                // Use python3 -m pytest to ensure it finds the library
-                sh "docker run --rm --user 0:0 -v ${WORKSPACE}:/home/spark ${DOCKER_IMAGE} python3 -m pytest tests/test_model_load.py"
+                // Added pip install to ensure pytest exists inside the container
+                sh """
+                    docker run --rm --user 0:0 \
+                    -v ${WORKSPACE}:/home/spark \
+                    ${DOCKER_IMAGE} bash -c "pip install pytest && python3 -m pytest tests/test_model_load.py"
+                """
                 
                 echo "🚀 Running Engine: Solving for Add Factors (e)..."
                 sh """
