@@ -11,11 +11,12 @@ pipeline {
         IMAGE_NAME = "macro-engine-local"
     }
 
-    stages {
         stage('Initialize') {
             steps {
-                // Ensure fresh directories for every run
+                // Create the directories on the host first
                 sh "mkdir -p results data"
+                // Grant global write permissions so the Docker user (spark) can create subfolders
+                sh "chmod 777 results data"
                 sh "rm -f results/*.csv"
             }
         }
