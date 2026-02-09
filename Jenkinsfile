@@ -3,7 +3,7 @@ pipeline {
     
     parameters {
         choice(name: 'BACKTEST_YEAR', 
-               choices: ['2004', '2005', '2006', '2007', '2008', '2024'], 
+               choices: ['2004', '2005', '2006', '2007', '2008', '2020'], 
                description: 'Select the year for the Tealbook backtest simulation.')
     }
 
@@ -11,11 +11,12 @@ pipeline {
         IMAGE_NAME = "macro-engine-local"
     }
 
+    stages {
         stage('Initialize') {
             steps {
-                // Create the directories on the host first
+                // Fix: Create directories and grant write access so the Docker 'spark' user 
+                // doesn't hit a Permission Denied error when creating subfolders.
                 sh "mkdir -p results data"
-                // Grant global write permissions so the Docker user (spark) can create subfolders
                 sh "chmod 777 results data"
                 sh "rm -f results/*.csv"
             }
@@ -29,7 +30,7 @@ pipeline {
 
         stage('Fetch Macro Data') {
             steps {
-                echo "Pulling Tealbook data via Docker..."
+                echo "Pulling Tealbook data and Narrative PDFs for ${params.BACKTEST_YEAR}..."
                 sh """
                     docker run --rm \
                     -v ${WORKSPACE}/data:/home/spark/data \
@@ -40,7 +41,6 @@ pipeline {
 
         stage('Unit Tests') {
             steps {
-                // Mount results so Jenkins can grab the XML report
                 sh """
                     docker run --rm \
                     -v ${WORKSPACE}/results:/home/spark/results \
@@ -58,25 +58,29 @@ pipeline {
             when { branch 'main' }
             steps {
                 echo "Running simulation for year: ${params.BACKTEST_YEAR}"
-                sh """
-                    docker run --rm \
-                    -v ${WORKSPACE}/results:/home/spark/results \
-                    -v ${WORKSPACE}/data:/home/spark/data \
-                    -e CLOUD_RUN_TASK_INDEX=${Integer.parseInt(params.BACKTEST_YEAR) - 2004} \
-                    ${IMAGE_NAME}:latest python3 src/engine.py
-                """
+                script {
+                    // Calculate task index (2004 = 0, 2005 = 1, etc.)
+                    def taskIndex = params.BACKTEST_YEAR.toInteger() - 2004
+                    sh """
+                        docker run --rm \
+                        -v ${WORKSPACE}/results:/home/spark/results \
+                        -v ${WORKSPACE}/data:/home/spark/data \
+                        -e CLOUD_RUN_TASK_INDEX=${taskIndex} \
+                        ${IMAGE_NAME}:latest python3 src/engine.py
+                    """
+                }
             }
         }
     }
 
     post {
         success {
-            // Artifacts are archived BEFORE the workspace is cleaned
-            archiveArtifacts artifacts: 'results/*.csv', fingerprint: true, allowEmptyArchive: true
-            echo "🏁 Build successful! Results archived."
+            // Archive the CSV results and the scraped Add-Factor text files
+            archiveArtifacts artifacts: 'results/*.csv, data/*.txt', fingerprint: true, allowEmptyArchive: true
+            echo "🏁 Build successful! Results and Add-Factors archived."
         }
         always {
-            // Clean up the workspace so we don't leak data between runs
+            // Cleanup to save disk space, but only AFTER archiving
             echo "🧹 Cleaning up workspace directories..."
             sh "rm -rf data/* results/*"
         }
