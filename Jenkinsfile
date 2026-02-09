@@ -8,7 +8,7 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "🧹 Targeted cleanup & Prepping Build Tools..."
+                echo "🧹 Targeted cleanup..."
                 script {
                     sh "docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f"
                     sh "mkdir -p results models"
@@ -29,14 +29,15 @@ pipeline {
                 script {
                     def workspaceRelPath = WORKSPACE.replace("/var/jenkins_home/", "")
                     
-                    // 1. Install system deps, install pyfrbus, and run tests
+                    // 1. Install system deps (including SWIG), install pyfrbus, and run tests
                     sh """
                         docker run --rm --user 0:0 \
                         -v jenkins_home:/var/jenkins_home \
                         -w /var/jenkins_home/${workspaceRelPath} \
                         -e PYTHONPATH=. \
                         ${DOCKER_IMAGE} bash -c '
-                            apt-get update && apt-get install -y gcc libsuitesparse-dev && \
+                            apt-get update && \
+                            apt-get install -y gcc libsuitesparse-dev swig libblas-dev && \
                             pip install pytest && \
                             pip install -e pyfrbus/ && \
                             python3 -m pytest tests/test_model_load.py
@@ -44,7 +45,7 @@ pipeline {
                     """
 
                     echo "🚀 Running Engine: Solving for Add Factors (e)..."
-                    // 2. Run the actual engine
+                    // 2. Run the actual engine script
                     sh """
                         docker run --rm --user 0:0 \
                         --memory='6g' --memory-swap='6g' \
@@ -56,7 +57,7 @@ pipeline {
                 }
             }
         }
-    } // End of Stages
+    } // End of stages
 
     post {
         always {
@@ -64,4 +65,4 @@ pipeline {
             archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
         }
     }
-} // End of Pipeline
+}
