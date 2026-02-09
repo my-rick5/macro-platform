@@ -22,11 +22,13 @@ pipeline {
 
         stage('Fetch Model Logic') {
             steps {
-                echo "🧠 Fetching official FRB/US model equations (model.xml)..."
+                echo "🧠 Locating model equations from local directory..."
                 script {
-                    sh "curl -L -o frbus_python.zip 'https://www.federalreserve.gov/econres/files/frbus_py.zip'"
-                    sh "unzip -o frbus_python.zip 'models/model.xml' -d ./"
-                    sh "rm frbus_python.zip"
+                    // Check if the file exists in your repo's pyfrbus folder
+                    // Adjust the path if model.xml is directly in pyfrbus/
+                    sh "cp pyfrbus/models/model.xml ./model.xml || cp pyfrbus/model.xml ./model.xml"
+                    
+                    echo "✅ model.xml isolated for simulation."
                 }
             }
         }
