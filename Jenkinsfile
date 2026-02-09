@@ -22,17 +22,12 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/workspace"
                     
-                    echo "🔍 DEBUG: Locating Python Packages..."
+                    // Fixed debug print syntax and pathing
+                    echo "🔍 DEBUG: Final Path Verification..."
                     sh """
                         docker exec ${CONTAINER_NAME} bash -c '
-                            echo "--- Python Sys Path ---"
-                            python3 -c "import sys; print(\"\\n\".join(sys.path))"
-                            
-                            echo "--- Pip List (Internal) ---"
-                            pip list | grep pyfrbus || echo "pyfrbus NOT FOUND IN PIP"
-                            
-                            echo "--- File Search for pyfrbus ---"
-                            find /home/spark -name "frbus.py" | head -n 5
+                            echo "--- Checking Package Init ---"
+                            ls -l /home/spark/pyfrbus/pyfrbus/__init__.py
                         '
                     """
 
@@ -43,16 +38,17 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
+                    // Pointing directly to /home/spark/pyfrbus so the 'pyfrbus' subfolder is found
                     sh """
                         docker exec -w /workspace \
-                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/workspace \
+                        -e PYTHONPATH=/home/spark/pyfrbus:/workspace \
                         ${CONTAINER_NAME} python3 -m pytest tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages \
+                        -e PYTHONPATH=/home/spark/pyfrbus \
                         ${CONTAINER_NAME} python3 src/engine.py
                     """
                     
