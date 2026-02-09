@@ -9,24 +9,26 @@ pipeline {
         }
         stage('Process Data') {
             steps {
+                // Run as root (0:0) to write to host volumes
                 sh "docker run --rm --user 0:0 -v ${WORKSPACE}/data:/home/spark/data -v ${WORKSPACE}/results:/home/spark/results macro-engine-local:latest python3 src/fetch_tealbook.py"
-                // FIX: Give files back to Jenkins user so it can archive them
-                sh "sudo chown -R \$(id -u):\$(id -g) data results"
+                
+                // Fix permissions WITHOUT sudo (Jenkins is usually root or has docker group access)
+                sh "chown -R \$(id -u):\$(id -g) data results || true"
             }
         }
         stage('Unit Tests') {
             steps {
                 sh "docker run --rm --user 0:0 -v ${WORKSPACE}/results:/home/spark/results macro-engine-local:latest pytest tests/ --junitxml=results/test-reports.xml"
-                sh "sudo chown -R \$(id -u):\$(id -g) results"
+                sh "chown -R \$(id -u):\$(id -g) results || true"
             }
         }
     }
     post {
-        success {
+        always {
             script {
-                // Archive using exact relative paths
-                junit testResults: 'results/test-reports.xml', allowEmptyResults: true
-                archiveArtifacts artifacts: 'data/tealbook_unemployment.csv, results/test-reports.xml', allowEmptyArchive: true
+                // Check if files exist before trying to archive to avoid 'match nothing' errors
+                junit testResults: 'results/*.xml', allowEmptyResults: true
+                archiveArtifacts artifacts: 'data/*.csv, results/*.xml', allowEmptyArchive: true
             }
         }
         cleanup {
