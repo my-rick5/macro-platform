@@ -68,7 +68,7 @@ pipeline {
         }
     }
 
-    ppost {
+    post {
         success {
             // Artifacts are archived BEFORE the workspace is cleaned
             archiveArtifacts artifacts: 'results/*.csv', fingerprint: true, allowEmptyArchive: true
