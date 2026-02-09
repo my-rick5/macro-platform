@@ -22,35 +22,44 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Installing & De-conflicting..."
+                    echo "📦 Manual Library Deployment..."
                     sh """
-                        # Install the package formally
-                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
+                        # Create a permanent system home for the library
+                        docker exec ${CONTAINER_NAME} mkdir -p /usr/local/lib/macro_platform
                         
-                        # RENAME the repo folder to prevent shadowing/confusion
-                        docker exec ${CONTAINER_NAME} mv /source_code/pyfrbus /source_code/pyfrbus_repo_folder
+                        # Copy only the internal pyfrbus source folder to the system path
+                        # This puts 'frbus.py' at /usr/local/lib/macro_platform/pyfrbus/frbus.py
+                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /usr/local/lib/macro_platform/
+                        
+                        # Remove the source folder from /source_code to prevent ANY shadowing
+                        docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
-                    echo "🔧 Safety Check: Verifying Global Import..."
-                    sh "docker exec ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Global Import Success!\")'"
+                    echo "🔧 Safety Check: Verifying Manual Path..."
+                    sh """
+                        docker exec -e PYTHONPATH=/usr/local/lib/macro_platform \
+                        ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Manual Import Success!\")'
+                    """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        # Note the new path for the model file
-                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus_repo_folder/models/model.xml /home/spark/models/model.xml
+                        # Source code for the model was in the folder we just deleted, let's restore just the XML
+                        docker exec ${CONTAINER_NAME} mkdir -p /source_code/temp_models
+                        docker exec ${CONTAINER_NAME} cp /usr/local/lib/macro_platform/pyfrbus/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                     """
 
                     echo "🧪 Running Structural Validation..."
                     sh """
                         docker exec -w /source_code \
+                        -e PYTHONPATH=/usr/local/lib/macro_platform:/source_code \
                         ${CONTAINER_NAME} python3 -m pytest -vv tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/source_code/src \
+                        -e PYTHONPATH=/usr/local/lib/macro_platform:/source_code/src \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
