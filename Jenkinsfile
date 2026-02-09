@@ -28,14 +28,12 @@ pipeline {
 
         stage('Fetch Macro Data') {
             steps {
-                // Run as root to allow creating subdirectories in host-mounted volumes
                 sh "docker run --rm --user 0:0 -v ${WORKSPACE}/data:/home/spark/data ${IMAGE_NAME}:latest python3 src/fetch_tealbook.py"
             }
         }
 
         stage('Unit Tests') {
             steps {
-                // Fixed: Ensure root access to write the XML report
                 sh "docker run --rm --user 0:0 -v ${WORKSPACE}/results:/home/spark/results ${IMAGE_NAME}:latest pytest tests/ --junitxml=results/test-reports.xml"
             }
         }
@@ -53,12 +51,11 @@ pipeline {
 
     post {
         always {
-            // Archive results first
+            // Fix: Changed allowEmptyResults to allowEmptyArchive for artifacts
             junit testResults: 'results/*.xml', allowEmptyResults: true
-            archiveArtifacts artifacts: 'results/*.csv, data/*.txt', allowEmptyResults: true
+            archiveArtifacts artifacts: 'results/*.csv, data/*.txt', allowEmptyArchive: true
             
             echo "🧹 Cleaning up workspace..."
-            // Use -f to prevent errors if files are already missing
             sh "rm -f results/* data/*"
         }
     }
