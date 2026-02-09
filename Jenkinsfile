@@ -21,14 +21,24 @@ pipeline {
                     echo "🧪 Preparing Container & Data..."
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     
-                    // Copy everything into the container
+                    // 1. Copy the whole workspace
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Installing Library formally..."
-                    // We install the 'pyfrbus' directory that contains setup.py
-                    sh "docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e ."
+                    echo "📦 Fixing Structure & Installing Library..."
+                    sh """
+                        # Create a clean directory for the library
+                        docker exec ${CONTAINER_NAME} mkdir -p /opt/pyfrbus_lib
+                        
+                        # Move the setup.py AND the INNER source folder to the clean root
+                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/setup.py /opt/pyfrbus_lib/
+                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /opt/pyfrbus_lib/
+                        
+                        # Install from the clean directory
+                        docker exec -w /opt/pyfrbus_lib ${CONTAINER_NAME} python3 -m pip install -e .
+                    """
 
                     echo "🔧 Safety Check: Verifying Import..."
+                    // This should now work because /opt/pyfrbus_lib/pyfrbus contains frbus.py
                     sh "docker exec ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Import Success!\")'"
 
                     sh """
@@ -38,7 +48,6 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // We execute pytest as a module to ensure it uses the same python environment
                     sh """
                         docker exec -w /source_code \
                         -e PYTHONPATH=/source_code \
