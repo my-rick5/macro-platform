@@ -24,7 +24,7 @@ def test_required_variables():
     required_vars = ['LUR', 'LEH', 'LF', 'XGAP']
     
     # model.endog is a list of all endogenous variables in the model
-    missing = [var for var in required_vars if var not in model.endog and var not in model.exog]
+    missing = [var for var in required_vars if var not in model.endogs and var not in model.exogs]
     
     assert not missing, f"❌ Model missing critical variables: {missing}. Verify model.xml version."
 
