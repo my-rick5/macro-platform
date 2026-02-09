@@ -22,7 +22,7 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Precision Namespace Alignment..."
+                    echo "📦 Precision Namespace Alignment & Shadow Removal..."
                     sh """
                         # 1. Standard install for dependencies
                         docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
@@ -30,18 +30,17 @@ pipeline {
                         # 2. Setup a clean parent directory
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         
-                        # 3. Copy the inner package folder to the parent
-                        # This creates /opt/macro_platform/pyfrbus/
+                        # 3. Copy the inner package folder
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /opt/macro_platform/
                         
-                        # 4. Debug: Let's see exactly where things landed
-                        echo "--- Container Directory Structure ---"
-                        docker exec ${CONTAINER_NAME} ls -d /opt/macro_platform/pyfrbus || echo "❌ Folder missing!"
+                        # 4. CRITICAL: Remove the shadowing directory that caused Build 136 to fail
+                        docker exec ${CONTAINER_NAME} rm -rf /home/spark/pyfrbus
                         
-                        # 5. Cleanup
+                        # 5. Cleanup source
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
+                    // We put our /opt path FIRST so it takes priority over the spark local site-packages
                     def combinedPath = "/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages"
 
                     echo "🔧 Safety Check: Verifying Package Import..."
@@ -52,7 +51,6 @@ pipeline {
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        # Updated path for model.xml based on the new structure
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/pyfrbus/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                         docker exec ${CONTAINER_NAME} chmod -R 777 /home/spark /opt/macro_platform
