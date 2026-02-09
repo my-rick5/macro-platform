@@ -3,6 +3,8 @@ numpy
 pandas
 scipy
 requests
+pdfplumber
+requests
 # cvxopt  # (If you're using it for optimization)
 
 # --- CI/CD & Testing ---

@@ -1,56 +1,83 @@
 pipeline {
-    agent any 
+    agent any
+    
     parameters {
-        choice(name: 'BACKTEST_YEAR', choices: ['2004', '2005', '2006', '2007', '2008', '2024'], description: 'Main branch only.')
+        choice(name: 'BACKTEST_YEAR', 
+               choices: ['2004', '2005', '2006', '2007', '2008', '2024'], 
+               description: 'Select the year for the Tealbook backtest simulation.')
     }
-    environment { IMAGE_NAME = "macro-engine-local" }
+
+    environment {
+        IMAGE_NAME = "macro-engine-local"
+    }
 
     stages {
         stage('Initialize') {
             steps {
-                sh "mkdir -p results && rm -f results/*.csv"
+                // Ensure fresh directories for every run
+                sh "mkdir -p results data"
+                sh "rm -f results/*.csv"
             }
         }
+
         stage('Docker Build') {
             steps {
                 sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
+
         stage('Fetch Macro Data') {
             steps {
-                echo "Pulling latest Tealbook projections inside Docker..."
+                echo "Pulling Tealbook data via Docker..."
                 sh """
                     docker run --rm \
-                    -u \$(id -u):\$(id -g) \
                     -v ${WORKSPACE}/data:/home/spark/data \
-                    macro-engine-local:latest python3 src/fetch_tealbook.py
+                    ${IMAGE_NAME}:latest python3 src/fetch_tealbook.py
                 """
             }
         }
+
         stage('Unit Tests') {
             steps {
-                sh "docker run --rm ${IMAGE_NAME}:latest pytest tests/ --junitxml=results/test-reports.xml"
+                // Mount results so Jenkins can grab the XML report
+                sh """
+                    docker run --rm \
+                    -v ${WORKSPACE}/results:/home/spark/results \
+                    ${IMAGE_NAME}:latest pytest tests/ --junitxml=results/test-reports.xml
+                """
             }
-            post { always { junit 'results/test-reports.xml' } }
+            post {
+                always {
+                    junit 'results/test-reports.xml'
+                }
+            }
         }
+
         stage('Production Simulation') {
             when { branch 'main' }
             steps {
-                script {
-                    def taskIndex = Integer.parseInt(params.BACKTEST_YEAR) - 2004
-                    sh "docker run --rm -u \$(id -u):\$(id -g) -v ${WORKSPACE}/results:/home/spark/results -e CLOUD_RUN_TASK_INDEX=${taskIndex} ${IMAGE_NAME}:latest python3 src/engine.py"
-                }
+                echo "Running simulation for year: ${params.BACKTEST_YEAR}"
+                sh """
+                    docker run --rm \
+                    -v ${WORKSPACE}/results:/home/spark/results \
+                    -v ${WORKSPACE}/data:/home/spark/data \
+                    -e CLOUD_RUN_TASK_INDEX=${Integer.parseInt(params.BACKTEST_YEAR) - 2004} \
+                    ${IMAGE_NAME}:latest python3 src/engine.py
+                """
             }
         }
     }
-    post {
+
+    ppost {
         success {
-            script {
-                if (env.BRANCH_NAME == 'main') {
-                    archiveArtifacts artifacts: 'results/*.csv', allowEmptyArchive: true
-                }
-            }
+            // Artifacts are archived BEFORE the workspace is cleaned
+            archiveArtifacts artifacts: 'results/*.csv', fingerprint: true, allowEmptyArchive: true
+            echo "🏁 Build successful! Results archived."
         }
-        always { sh "docker rmi ${IMAGE_NAME}:latest || true" }
+        always {
+            // Clean up the workspace so we don't leak data between runs
+            echo "🧹 Cleaning up workspace directories..."
+            sh "rm -rf data/* results/*"
+        }
     }
 }
