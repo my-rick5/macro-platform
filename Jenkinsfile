@@ -20,10 +20,14 @@ pipeline {
                 script {
                     echo "🧪 Preparing Container & Data..."
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
-                    
-                    // Copy to a uniquely named folder to avoid import shadowing
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
                     
+                    // NEW: Perform an editable install inside the container
+                    // This creates the link between the 'pyfrbus' name and the source code
+                    sh """
+                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e .
+                    """
+
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/models/model.xml /home/spark/models/model.xml
@@ -31,17 +35,17 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // Pointing PYTHONPATH directly to the directory ABOVE the inner 'pyfrbus' folder
+                    // Note: We no longer need the complex PYTHONPATH for pyfrbus itself!
                     sh """
                         docker exec -w /source_code \
-                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark/pyfrbus:/source_code \
+                        -e PYTHONPATH=/source_code \
                         ${CONTAINER_NAME} python3 -m pytest tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark/pyfrbus:/source_code/src \
+                        -e PYTHONPATH=/source_code/src \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
