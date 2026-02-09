@@ -22,33 +22,35 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Bridging User Paths & Library Setup..."
+                    echo "📦 Preserving Package Namespace..."
                     sh """
-                        # 1. Install to ensure all niche dependencies are present
+                        # 1. Standard install
                         docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
                         
-                        # 2. Setup the library home
-                        docker exec ${CONTAINER_NAME} mkdir -p /opt/pyfrbus_lib
-                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus/. /opt/pyfrbus_lib/
+                        # 2. Setup a clean platform directory
+                        docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         
-                        # 3. Cleanup
+                        # 3. Copy the FOLDER, not the contents. 
+                        # This creates /opt/macro_platform/pyfrbus/
+                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /opt/macro_platform/
+                        
+                        # 4. Cleanup source to prevent shadowing
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
-                    // Define the magic path string to avoid repetition
-                    def combinedPath = "/opt/pyfrbus_lib:/home/spark/.local/lib/python3.9/site-packages"
+                    def combinedPath = "/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages"
 
-                    echo "🔧 Safety Check: Verifying Unified Path..."
+                    echo "🔧 Safety Check: Verifying Package Import..."
                     sh """
                         docker exec -e PYTHONPATH=${combinedPath} \
-                        ${CONTAINER_NAME} python3 -c 'import pandas; import frbus; print(\"✅ Unified Path Success!\")'
+                        ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Namespace Import Success!\")'
                     """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        docker exec ${CONTAINER_NAME} cp /opt/pyfrbus_lib/models/model.xml /home/spark/models/model.xml
+                        docker exec ${CONTAINER_NAME} cp /opt/macro_platform/pyfrbus/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
-                        docker exec ${CONTAINER_NAME} chmod -R 777 /home/spark /opt/pyfrbus_lib
+                        docker exec ${CONTAINER_NAME} chmod -R 777 /home/spark /opt/macro_platform
                     """
 
                     echo "🧪 Running Structural Validation..."
