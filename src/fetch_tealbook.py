@@ -6,14 +6,15 @@ def fetch_tealbook_data():
     data_dir = "/home/spark/data"
     os.makedirs(data_dir, exist_ok=True)
     
-    # Use a session to persist headers and handle cookies automatically
     session = requests.Session()
+    # Comprehensive browser headers
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Referer': 'https://www.philadelphiafed.org/surveys-and-data/real-time-data-research/tealbook-data-set',
-        'Connection': 'keep-alive'
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
     })
 
     excel_url = "https://www.philadelphiafed.org/-/media/frbp/assets/surveys-and-data/tealbook/philadelphia_data_set.xlsx"
@@ -22,13 +23,11 @@ def fetch_tealbook_data():
     
     print("📡 Fetching Excel Projections...")
     try:
-        # Step 1: Hit the landing page first to establish a session
-        session.get("https://www.philadelphiafed.org/surveys-and-data/real-time-data-research/tealbook-data-set", timeout=10)
+        # Hit landing page first to grab session cookies
+        session.get("https://www.philadelphiafed.org/surveys-and-data/real-time-data-research/tealbook-data-set", timeout=15)
         
-        # Step 2: Download the actual file
         r = session.get(excel_url, timeout=30)
-        
-        # Verify it's actually an Excel file (headers or content signature)
+        # Verify PK zip header for Excel
         if r.status_code == 200 and r.content.startswith(b'PK'):
             with open(local_xlsx, 'wb') as f:
                 f.write(r.content)
@@ -36,7 +35,8 @@ def fetch_tealbook_data():
             df.to_csv(output_csv, index=False)
             print(f"✅ CSV Generated: {output_csv}")
         else:
-            print(f"❌ Blocked. Received Content-Type: {r.headers.get('Content-Type')}")
+            print(f"❌ Blocked. Received: {r.headers.get('Content-Type')}")
+            # Optional: Log r.text[:200] here to see the error page if it fails
     except Exception as e:
         print(f"❌ Fetch Error: {e}")
 
