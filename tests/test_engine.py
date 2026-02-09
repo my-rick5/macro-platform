@@ -3,25 +3,29 @@ import pandas as pd
 import os
 from src.engine import run_macro_engine
 
-def test_engine_output_creation(tmp_path):
-    # Setup mock data environment
-    data_dir = "data"
-    os.makedirs(data_dir, exist_ok=True)
-    
-    # Create a dummy CSV to simulate the Process Data stage
-    mock_data = pd.DataFrame({
-        "Date": ["2004-01-01"],
-        "Q1": [5.5],
-        "Q2": [5.4]
-    })
-    mock_data.to_csv(os.path.join(data_dir, "tealbook_unemployment.csv"), index=False)
-
-    # Run engine logic (ensure results dir exists)
+def test_engine_logic():
+    # Create mock directories
+    os.makedirs("data", exist_ok=True)
     os.makedirs("results", exist_ok=True)
-    run_macro_engine()
+    
+    # Create a mock Excel file with the expected sheet name
+    mock_df = pd.DataFrame({
+        "Vintage": ["2024-Q1"],
+        "F1": [4.0],
+        "F2": [4.2]
+    })
+    
+    with pd.ExcelWriter("data/tealbook_raw.xlsx") as writer:
+        mock_df.to_excel(writer, sheet_name='UNEMP', index=False)
 
-    # Assertions
-    assert os.path.exists("results/forecast_summary.csv")
-    summary = pd.read_csv("results/forecast_summary.csv")
-    assert not summary.empty
-    assert "mean_unemployment_forecast" in summary.columns
+    # Run the engine (in test mode, paths should resolve locally)
+    # Note: If running inside Docker, ensure pathing logic matches
+    try:
+        run_macro_engine()
+        assert os.path.exists("results/forecast_summary.csv")
+        res = pd.read_csv("results/forecast_summary.csv")
+        assert res["mean_unemployment_forecast"].iloc[0] == 4.1
+    finally:
+        # Cleanup
+        if os.path.exists("results/forecast_summary.csv"):
+            os.remove("results/forecast_summary.csv")
