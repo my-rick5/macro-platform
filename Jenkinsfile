@@ -9,10 +9,8 @@ pipeline {
         }
         stage('Process Data') {
             steps {
-                // Run as root (0:0) to write to host volumes
                 sh "docker run --rm --user 0:0 -v ${WORKSPACE}/data:/home/spark/data -v ${WORKSPACE}/results:/home/spark/results macro-engine-local:latest python3 src/fetch_tealbook.py"
-                
-                // Fix permissions WITHOUT sudo (Jenkins is usually root or has docker group access)
+                // Change ownership back to current Jenkins user (not root)
                 sh "chown -R \$(id -u):\$(id -g) data results || true"
             }
         }
@@ -26,8 +24,8 @@ pipeline {
     post {
         always {
             script {
-                // Check if files exist before trying to archive to avoid 'match nothing' errors
-                junit testResults: 'results/*.xml', allowEmptyResults: true
+                // Now that the Jenkins user owns the files, it can see them
+                junit testResults: 'results/test-reports.xml', allowEmptyResults: true
                 archiveArtifacts artifacts: 'data/*.csv, results/*.xml', allowEmptyArchive: true
             }
         }
