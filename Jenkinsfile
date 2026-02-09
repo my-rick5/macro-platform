@@ -21,25 +21,24 @@ pipeline {
                     echo "🧪 Preparing Container & Data..."
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     
-                    // 1. Copy the whole workspace
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Fixing Structure & Installing Library..."
+                    echo "📦 Final Flattening & System Install..."
                     sh """
-                        # Create a clean directory for the library
-                        docker exec ${CONTAINER_NAME} mkdir -p /opt/pyfrbus_lib
+                        # Create a completely fresh flat source
+                        docker exec ${CONTAINER_NAME} mkdir -p /tmp/flat_lib/pyfrbus
+                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/setup.py /tmp/flat_lib/
+                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus/. /tmp/flat_lib/pyfrbus/
                         
-                        # Move the setup.py AND the INNER source folder to the clean root
-                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/setup.py /opt/pyfrbus_lib/
-                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /opt/pyfrbus_lib/
-                        
-                        # Install from the clean directory
-                        docker exec -w /opt/pyfrbus_lib ${CONTAINER_NAME} python3 -m pip install -e .
+                        # Perform a standard install (NOT editable)
+                        docker exec -w /tmp/flat_lib ${CONTAINER_NAME} python3 -m pip install .
                     """
 
                     echo "🔧 Safety Check: Verifying Import..."
-                    // This should now work because /opt/pyfrbus_lib/pyfrbus contains frbus.py
-                    sh "docker exec ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Import Success!\")'"
+                    // We will now check where Python is actually looking
+                    sh """
+                        docker exec ${CONTAINER_NAME} python3 -c "import sys; print('Search Paths:', sys.path); import pyfrbus; print('✅ Package found at:', pyfrbus.__file__)"
+                    """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
@@ -50,7 +49,6 @@ pipeline {
                     echo "🧪 Running Structural Validation..."
                     sh """
                         docker exec -w /source_code \
-                        -e PYTHONPATH=/source_code \
                         ${CONTAINER_NAME} python3 -m pytest -vv tests/test_model_load.py
                     """
         
