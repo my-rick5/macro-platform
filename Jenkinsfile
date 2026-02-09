@@ -22,11 +22,8 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
                     
-                    // We install it, but we also check where pip thinks it put it
-                    sh """
-                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e .
-                        docker exec ${CONTAINER_NAME} python3 -c "import pyfrbus; print(f'✅ pyfrbus found at: {pyfrbus.__file__}')" || echo "❌ pyfrbus still not importable"
-                    """
+                    // Keep the editable install - it's handling the dependencies (sympy, etc.) perfectly
+                    sh "docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e ."
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
@@ -35,8 +32,7 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // CRITICAL CHANGE: We point PYTHONPATH to /source_code/pyfrbus 
-                    // This makes the internal 'pyfrbus' folder the primary target.
+                    // ADDED: /source_code/pyfrbus to the path to resolve the double-folder import
                     sh """
                         docker exec -w /source_code \
                         -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code/pyfrbus:/source_code \
