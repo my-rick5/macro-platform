@@ -27,8 +27,12 @@ pipeline {
         stage('Run Engine') {
             steps {
                 echo "🧪 Running Structural Validation..."
-                // We wrap the whole command in single quotes so the && stays inside the container
-                sh "docker run --rm --user 0:0 -v ${WORKSPACE}:/home/spark -w /home/spark ${DOCKER_IMAGE} bash -c 'pip install pytest && python3 -m pytest tests/test_model_load.py'"
+                sh """
+                    docker run --rm --user 0:0 \
+                    -v ${WORKSPACE}:/home/spark \
+                    -w /home/spark \
+                    ${DOCKER_IMAGE} bash -c 'pip install pytest && python3 -m pytest tests/test_model_load.py'
+                """
                 
                 echo "🚀 Running Engine: Solving for Add Factors (e)..."
                 sh """
