@@ -12,19 +12,27 @@ pipeline {
         }
         stage('Process Data') {
             steps {
-                echo "📦 Injecting Row Format Excel..."
-                // Rename the destination file slightly to force a fresh file handle
-                sh "cp ${WORKSPACE}/external_data/GBweb_Row_Format.xlsx ${WORKSPACE}/processing_zone/source_data.xlsx"
-                sh "chmod 664 ${WORKSPACE}/processing_zone/source_data.xlsx"
-
-                echo "⚙️ Converting 'UNEMP' sheet to CSV..."
+                echo "📦 Injecting Data via Docker CP (No Volumes)..."
+                
+                // 1. Create a container but don't start it yet
+                sh "docker create --name macro_processor --user 0:0 macro-engine-local:latest"
+                
+                // 2. Push the Excel file into the container
+                sh "docker cp external_data/GBweb_Row_Format.xlsx macro_processor:/tmp/source_data.xlsx"
+                
+                // 3. Run the processing logic inside that container
                 sh """
-                    docker run --rm --user 0:0 \
-                    -v ${WORKSPACE}/processing_zone:/home/spark/data \
-                    macro-engine-local:latest \
-                    python3 -c "import pandas as pd; df = pd.read_excel('/home/spark/data/source_data.xlsx', sheet_name='UNEMP'); df.to_csv('/home/spark/data/tealbook_unemployment.csv', index=False); print('✅ Success: CSV generated')"
+                    docker start -a macro_processor --attach
+                    docker exec macro_processor python3 -c "import pandas as pd; df = pd.read_excel('/tmp/source_data.xlsx', sheet_name='UNEMP'); df.to_csv('/tmp/tealbook_unemployment.csv', index=False); print('✅ Success: CSV generated')"
                 """
-                sh "chown -R \$(id -u):\$(id -g) ${WORKSPACE}/processing_zone ${WORKSPACE}/results || true"
+                
+                // 4. Pull the resulting CSV back to the Jenkins workspace
+                sh "docker cp macro_processor:/tmp/tealbook_unemployment.csv data/tealbook_unemployment.csv"
+                
+                // 5. Cleanup the temporary container
+                sh "docker rm -f macro_processor"
+                
+                sh "chown -R \$(id -u):\$(id -g) data results || true"
             }
         }
         stage('Run Engine') {
