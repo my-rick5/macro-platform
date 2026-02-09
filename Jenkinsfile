@@ -23,27 +23,26 @@ pipeline {
 
                     echo "📦 Precision Namespace Alignment & Asset Preservation..."
                     sh """
-                        # 1. Standard install + explicitly add missing engine dependencies
+                        # 1. Install the package and psutil
                         docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install . psutil
-                        
-                        # 2. Move code and models to /opt
+                    
+                        # 2. Move to /opt
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/. /opt/macro_platform/
-                        
-                        # 3. Initialize Spark directories
+                    
+                        # 3. PATCH: Fix the "floating point" bug in their load_data.py
+                        docker exec ${CONTAINER_NAME} sed -i 's/data.index, freq=\"Q\"/data.index.astype(str), freq=\"Q\"/g' /opt/macro_platform/pyfrbus/load_data.py
+                    
+                        # 4. Setup directories and data
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        
-                        # 4. Copy data
-                        docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv || \
-                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
-                        
-                        # 5. Copy model from preserved /opt location
+                        docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/models/model.xml /home/spark/models/model.xml
-                        
-                        # 6. Cleanup temporary source folders
-                        docker exec ${CONTAINER_NAME} rm -rf /home/spark/pyfrbus
+                    
+                        # 5. Cleanup
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
+
+
 
                     def combinedPath = "/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages"
 
