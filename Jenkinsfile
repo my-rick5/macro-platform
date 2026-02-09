@@ -22,15 +22,6 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/workspace"
                     
-                    // Fixed debug print syntax and pathing
-                    echo "🔍 DEBUG: Final Path Verification..."
-                    sh """
-                        docker exec ${CONTAINER_NAME} bash -c '
-                            echo "--- Checking Package Init ---"
-                            ls -l /home/spark/pyfrbus/pyfrbus/__init__.py
-                        '
-                    """
-
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         docker exec ${CONTAINER_NAME} cp /workspace/pyfrbus/models/model.xml /home/spark/models/model.xml
@@ -38,17 +29,17 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // Pointing directly to /home/spark/pyfrbus so the 'pyfrbus' subfolder is found
+                    // We combine the spark user's library path WITH your custom model path
                     sh """
                         docker exec -w /workspace \
-                        -e PYTHONPATH=/home/spark/pyfrbus:/workspace \
+                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark/pyfrbus:/workspace \
                         ${CONTAINER_NAME} python3 -m pytest tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/home/spark/pyfrbus \
+                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark/pyfrbus \
                         ${CONTAINER_NAME} python3 src/engine.py
                     """
                     
