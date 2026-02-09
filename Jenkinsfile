@@ -31,7 +31,7 @@ pipeline {
                     docker run --rm --user 0:0 \
                     -v ${WORKSPACE}:/home/spark \
                     -w /home/spark \
-                    ${DOCKER_IMAGE} bash -c 'pip install pytest && python3 -m pytest tests/test_model_load.py'
+                    ${DOCKER_IMAGE} bash -c 'ls -R && pip install pytest && python3 -m pytest tests/test_model_load.py'
                 """
                 
                 echo "🚀 Running Engine: Solving for Add Factors (e)..."
