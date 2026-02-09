@@ -21,11 +21,17 @@ pipeline {
                     echo "🧪 Preparing Container & Data..."
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     
-                    // 1. Copy the library source directly to /home/spark to match the image's expectation
+                    // Flattened copy
                     sh "docker cp pyfrbus/pyfrbus/. ${CONTAINER_NAME}:/home/spark/pyfrbus/"
-                    
-                    // 2. Copy the rest of the workspace to /source_code for the tests/engine
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
+
+                    echo "🔍 DEBUG: Probing Container Filesystem..."
+                    sh """
+                        echo '--- Directory Structure of /home/spark/pyfrbus ---'
+                        docker exec ${CONTAINER_NAME} ls -R /home/spark/pyfrbus
+                        echo '--- Python Path & Import Check ---'
+                        docker exec -e PYTHONPATH=/home/spark ${CONTAINER_NAME} python3 -c "import sys; print('\\n'.join(sys.path)); import pyfrbus; print('SUCCESS: pyfrbus imported from:', pyfrbus.__file__)" || echo "FAILURE: pyfrbus still not found"
+                    """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
@@ -34,11 +40,10 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // Now PYTHONPATH points directly to the folder containing the __init__.py
                     sh """
                         docker exec -w /source_code \
                         -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark:/source_code \
-                        ${CONTAINER_NAME} python3 -m pytest tests/test_model_load.py
+                        ${CONTAINER_NAME} python3 -m pytest -vv tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
@@ -48,7 +53,6 @@ pipeline {
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
-                    echo "📥 Pulling Results..."
                     sh "docker cp ${CONTAINER_NAME}:/home/spark/results/. ./results/"
                 }
             }
