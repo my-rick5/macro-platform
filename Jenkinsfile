@@ -24,38 +24,34 @@ pipeline {
 
                     echo "📦 Precision Namespace Alignment & Asset Preservation..."
                     sh """
-                        # 1. Standard install for dependencies
+                        # 1. Standard install
                         docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
                         
-                        # 2. Setup clean parent directory
+                        # 2. Move code and models to /opt
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
-                        
-                        # 3. Copy the ENTIRE source folder to preserve /models and /data
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/. /opt/macro_platform/
                         
-                        # 4. Remove shadowing folders
+                        # 3. CRITICAL: Initialize Spark directories before cleaning up source_code
+                        docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
+                        
+                        # 4. Copy data from source to spark home BEFORE we delete source_code
+                        # If data is in the repo root /data:
+                        docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv || \
+                        # If data is inside the pyfrbus folder:
+                        docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
+                        
+                        # 5. Copy model from the newly preserved /opt location
+                        docker exec ${CONTAINER_NAME} cp /opt/macro_platform/models/model.xml /home/spark/models/model.xml
+                        
+                        # 6. Cleanup shadowing/temporary folders
                         docker exec ${CONTAINER_NAME} rm -rf /home/spark/pyfrbus
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
-                    // The PYTHONPATH stays the same as Build 138
                     def combinedPath = "/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages"
 
                     echo "🔧 Safety Check: Verifying Package Import..."
-                    sh """
-                        docker exec -e PYTHONPATH=${combinedPath} \
-                        ${CONTAINER_NAME} python3 -c 'import pyfrbus; from pyfrbus import frbus; print(\"✅ Namespace Import Success!\")'
-                    """
-
-                    sh """
-                        docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        
-                        # Now referencing the preserved models directory in the root of macro_platform
-                        docker exec ${CONTAINER_NAME} cp /opt/macro_platform/models/model.xml /home/spark/models/model.xml
-                        docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
-                        
-                        docker exec ${CONTAINER_NAME} chmod -R 777 /home/spark /opt/macro_platform
-                    """
+                    sh "docker exec -e PYTHONPATH=${combinedPath} ${CONTAINER_NAME} python3 -c 'import pyfrbus; from pyfrbus import frbus; print(\"✅ Namespace Import Success!\")'"
 
                     echo "🧪 Running Structural Validation..."
                     sh """
@@ -67,7 +63,7 @@ pipeline {
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=${combinedPath}:/source_code/src \
+                        -e PYTHONPATH=${combinedPath} \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
