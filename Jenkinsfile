@@ -22,44 +22,46 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Global Dependency & Path Alignment..."
+                    echo "📦 Bridging User Paths & Library Setup..."
                     sh """
-                        # 1. Force a SYSTEM-WIDE install (no --user flag)
-                        docker exec -u 0 -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
+                        # 1. Install to ensure all niche dependencies are present
+                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
                         
                         # 2. Setup the library home
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/pyfrbus_lib
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus/. /opt/pyfrbus_lib/
                         
-                        # 3. Aggressive cleanup
+                        # 3. Cleanup
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
-                    echo "🔧 Safety Check: Verifying Global Visibility..."
+                    // Define the magic path string to avoid repetition
+                    def combinedPath = "/opt/pyfrbus_lib:/home/spark/.local/lib/python3.9/site-packages"
+
+                    echo "🔧 Safety Check: Verifying Unified Path..."
                     sh """
-                        docker exec -e PYTHONPATH=/opt/pyfrbus_lib \
-                        ${CONTAINER_NAME} python3 -c 'import pandas; import frbus; print(\"✅ System-wide Success!\")'
+                        docker exec -e PYTHONPATH=${combinedPath} \
+                        ${CONTAINER_NAME} python3 -c 'import pandas; import frbus; print(\"✅ Unified Path Success!\")'
                     """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         docker exec ${CONTAINER_NAME} cp /opt/pyfrbus_lib/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
-                        # Ensure the spark user can read the results of our root-level work
                         docker exec ${CONTAINER_NAME} chmod -R 777 /home/spark /opt/pyfrbus_lib
                     """
 
                     echo "🧪 Running Structural Validation..."
                     sh """
                         docker exec -w /source_code \
-                        -e PYTHONPATH=/opt/pyfrbus_lib:/source_code \
+                        -e PYTHONPATH=${combinedPath}:/source_code \
                         ${CONTAINER_NAME} python3 -m pytest -vv tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/opt/pyfrbus_lib:/source_code/src \
+                        -e PYTHONPATH=${combinedPath}:/source_code/src \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
