@@ -54,10 +54,9 @@ pipeline {
                     sh "docker exec -e PYTHONPATH=${combinedPath} ${CONTAINER_NAME} python3 -c 'import pyfrbus; from pyfrbus import frbus; print(\"✅ Namespace Import Success!\")'"
 
                     echo "🧪 Running Structural Validation & Discovery..."
-                    // We call docker exec ONCE from the Jenkins host to run Python inside the container
                     sh """
                         docker exec -e PYTHONPATH=${combinedPath} ${CONTAINER_NAME} \
-                        python3 -c "from pyfrbus import Frbus; m = Frbus('/home/spark/models/model.xml'); print('AVAILABLE ATTRS:', [a for a in dir(m) if not a.startswith('_')])"
+                        python3 -c "from pyfrbus.frbus import Frbus; m = Frbus('/home/spark/models/model.xml'); print('AVAILABLE ATTRS:', [a for a in dir(m) if not a.startswith('_')])"
                     """
 
                     echo "🚀 Running Engine..."
