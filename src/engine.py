@@ -2,7 +2,7 @@ import pandas as pd
 import psutil
 import sys
 from pyfrbus.frbus import Frbus
-from pyfrbus.frbus.load_data import load_data
+from pyfrbus.load_data import load_data
 
 def check_hardware_readiness():
     mem = psutil.virtual_memory()
