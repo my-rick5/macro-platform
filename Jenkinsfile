@@ -22,41 +22,43 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Final Structural Alignment..."
+                    echo "📦 Ultimate Structural Fix..."
                     sh """
-                        docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
+                        # Create a clean target
+                        docker exec ${CONTAINER_NAME} mkdir -p /opt/pyfrbus_lib
                         
-                        # Move the core package folder to the search path
-                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /opt/macro_platform/
+                        # Copy the INNERMOST folder contents directly to the target
+                        # This puts frbus.py directly at /opt/pyfrbus_lib/frbus.py
+                        docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus/. /opt/pyfrbus_lib/
                         
-                        # Remove the original folder to prevent path shadowing
+                        # Clean up
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
-                    echo "🔧 Safety Check: Verifying Global Import..."
+                    echo "🔧 Safety Check: Verifying Direct Module Import..."
+                    # We now import 'frbus' directly because it's at the root of the PYTHONPATH
                     sh """
-                        docker exec -e PYTHONPATH=/opt/macro_platform \
-                        ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Global Import Success!\")'
+                        docker exec -e PYTHONPATH=/opt/pyfrbus_lib \
+                        ${CONTAINER_NAME} python3 -c 'import frbus; print(\"✅ Module Import Success!\")'
                     """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        # Copy model.xml from the new package location
-                        docker exec ${CONTAINER_NAME} cp /opt/macro_platform/pyfrbus/models/model.xml /home/spark/models/model.xml
+                        docker exec ${CONTAINER_NAME} cp /opt/pyfrbus_lib/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                     """
 
                     echo "🧪 Running Structural Validation..."
                     sh """
                         docker exec -w /source_code \
-                        -e PYTHONPATH=/opt/macro_platform:/source_code \
+                        -e PYTHONPATH=/opt/pyfrbus_lib:/source_code \
                         ${CONTAINER_NAME} python3 -m pytest -vv tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/opt/macro_platform:/source_code/src \
+                        -e PYTHONPATH=/opt/pyfrbus_lib:/source_code/src \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
