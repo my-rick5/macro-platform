@@ -10,7 +10,6 @@ pipeline {
         stage('Initialize') {
             steps {
                 sh "mkdir -p results models data"
-                // Cleanup any old containers with this build number
                 sh "docker rm -f ${CONTAINER_NAME} || true"
             }
         }
@@ -24,26 +23,24 @@ pipeline {
 
                     echo "📦 Precision Namespace Alignment & Asset Preservation..."
                     sh """
-                        # 1. Standard install
-                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
+                        # 1. Standard install + explicitly add missing engine dependencies
+                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install . psutil
                         
                         # 2. Move code and models to /opt
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/. /opt/macro_platform/
                         
-                        # 3. CRITICAL: Initialize Spark directories before cleaning up source_code
+                        # 3. Initialize Spark directories
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         
-                        # 4. Copy data from source to spark home BEFORE we delete source_code
-                        # If data is in the repo root /data:
+                        # 4. Copy data
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv || \
-                        # If data is inside the pyfrbus folder:
                         docker exec ${CONTAINER_NAME} cp /source_code/pyfrbus/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                         
-                        # 5. Copy model from the newly preserved /opt location
+                        # 5. Copy model from preserved /opt location
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/models/model.xml /home/spark/models/model.xml
                         
-                        # 6. Cleanup shadowing/temporary folders
+                        # 6. Cleanup temporary source folders
                         docker exec ${CONTAINER_NAME} rm -rf /home/spark/pyfrbus
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
@@ -53,10 +50,10 @@ pipeline {
                     echo "🔧 Safety Check: Verifying Package Import..."
                     sh "docker exec -e PYTHONPATH=${combinedPath} ${CONTAINER_NAME} python3 -c 'import pyfrbus; from pyfrbus import frbus; print(\"✅ Namespace Import Success!\")'"
 
-                    echo "🧪 Running Structural Validation & Discovery..."
+                    echo "🧪 Running Structural Validation (Checking endo_names)..."
                     sh """
                         docker exec -e PYTHONPATH=${combinedPath} ${CONTAINER_NAME} \
-                        python3 -c "from pyfrbus.frbus import Frbus; m = Frbus('/home/spark/models/model.xml'); print('AVAILABLE ATTRS:', [a for a in dir(m) if not a.startswith('_')])"
+                        python3 -c "from pyfrbus.frbus import Frbus; m = Frbus('/home/spark/models/model.xml'); print('MODEL ENDO VARS:', m.endo_names[:10], '...')"
                     """
 
                     echo "🚀 Running Engine..."
@@ -70,7 +67,7 @@ pipeline {
                 }
             }
         }
-    } // End of Stages
+    }
 
     post {
         always {
@@ -82,4 +79,4 @@ pipeline {
             archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
         }
     }
-} // End of Pipeline
+}
