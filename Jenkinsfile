@@ -24,21 +24,16 @@ pipeline {
 
                     echo "📦 Final Structural Alignment..."
                     sh """
-                        # Create the library home
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         
-                        # Move the MIDDLE pyfrbus folder (the one containing the actual code) 
-                        # to the library home.
-                        # This makes /opt/macro_platform/pyfrbus the package root.
+                        # Move the core package folder to the search path
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /opt/macro_platform/
                         
-                        # Remove the messy source folder
+                        # Remove the original folder to prevent path shadowing
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
                     echo "🔧 Safety Check: Verifying Global Import..."
-                    # We point PYTHONPATH to /opt/macro_platform. 
-                    # Python will find the 'pyfrbus' folder inside it and treat it as a package.
                     sh """
                         docker exec -e PYTHONPATH=/opt/macro_platform \
                         ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Global Import Success!\")'
@@ -46,8 +41,7 @@ pipeline {
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
-                        # The model.xml was in the top-level repo folder which we just deleted, 
-                        # but it's also inside the inner package structure.
+                        # Copy model.xml from the new package location
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/pyfrbus/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                     """
