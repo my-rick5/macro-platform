@@ -33,6 +33,7 @@ pipeline {
                 echo "Pulling Tealbook data and Narrative PDFs for ${params.BACKTEST_YEAR}..."
                 sh """
                     docker run --rm \
+                    --user \$(id -u):\$(id -g) \
                     -v ${WORKSPACE}/data:/home/spark/data \
                     ${IMAGE_NAME}:latest python3 src/fetch_tealbook.py
                 """
