@@ -22,8 +22,11 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
                     
-                    // Keep this! It successfully registered your package
-                    sh "docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e ."
+                    // We install it, but we also check where pip thinks it put it
+                    sh """
+                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e .
+                        docker exec ${CONTAINER_NAME} python3 -c "import pyfrbus; print(f'✅ pyfrbus found at: {pyfrbus.__file__}')" || echo "❌ pyfrbus still not importable"
+                    """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
@@ -32,17 +35,18 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // We add the spark local path so root can find pytest
+                    // CRITICAL CHANGE: We point PYTHONPATH to /source_code/pyfrbus 
+                    // This makes the internal 'pyfrbus' folder the primary target.
                     sh """
                         docker exec -w /source_code \
-                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code \
+                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code/pyfrbus:/source_code \
                         ${CONTAINER_NAME} python3 -m pytest tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code/src \
+                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code/pyfrbus:/source_code/src \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
