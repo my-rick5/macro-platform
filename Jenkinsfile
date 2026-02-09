@@ -2,7 +2,9 @@ pipeline {
     agent any
     
     parameters {
-        choice(name: 'BACKTEST_YEAR', choices: ['2004', '2005', '2006', '2020'], description: 'Tealbook Year')
+        choice(name: 'BACKTEST_YEAR', 
+               choices: ['2004', '2005', '2006', '2007', '2008'], 
+               description: 'Tealbook Year for Simulation')
     }
 
     environment {
@@ -14,7 +16,7 @@ pipeline {
             steps {
                 sh "mkdir -p results data"
                 sh "chmod 777 results data"
-                sh "rm -f results/*.csv data/*.txt"
+                sh "rm -f results/*.csv data/*.txt results/*.xml"
             }
         }
 
@@ -26,20 +28,15 @@ pipeline {
 
         stage('Fetch Macro Data') {
             steps {
-                // Using root (0:0) to ensure we can write to host-mounted volumes
+                // Run as root to allow creating subdirectories in host-mounted volumes
                 sh "docker run --rm --user 0:0 -v ${WORKSPACE}/data:/home/spark/data ${IMAGE_NAME}:latest python3 src/fetch_tealbook.py"
             }
         }
 
         stage('Unit Tests') {
             steps {
-                // Fixed: Added --user 0:0 so pytest can write the .xml report
+                // Fixed: Ensure root access to write the XML report
                 sh "docker run --rm --user 0:0 -v ${WORKSPACE}/results:/home/spark/results ${IMAGE_NAME}:latest pytest tests/ --junitxml=results/test-reports.xml"
-            }
-            post {
-                always {
-                    junit 'results/test-reports.xml'
-                }
             }
         }
 
@@ -55,11 +52,14 @@ pipeline {
     }
 
     post {
-        success {
-            archiveArtifacts artifacts: 'results/*.csv, data/*.txt', fingerprint: true
-        }
         always {
-            sh "rm -rf data/* results/*"
+            // Archive results first
+            junit testResults: 'results/*.xml', allowEmptyResults: true
+            archiveArtifacts artifacts: 'results/*.csv, data/*.txt', allowEmptyResults: true
+            
+            echo "🧹 Cleaning up workspace..."
+            // Use -f to prevent errors if files are already missing
+            sh "rm -f results/* data/*"
         }
     }
 }
