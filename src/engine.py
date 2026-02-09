@@ -24,7 +24,7 @@ def run_pro_engine():
     model = Frbus("models/model.xml")
 
     print("⚖️  Solving for Tracking Residuals (e)...")
-    results = model.init_trac(data=df, start=2015.0, end=2025.75, mce=None)
+    results = model.init_trac(dataset=df, start=2015.0, end=2025.75, mce=None)
 
     # --- JUDGMENT ALERT LOGIC ---
     # We look at LUR_trac (the add factor)
