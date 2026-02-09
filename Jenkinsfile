@@ -14,15 +14,16 @@ pipeline {
             steps {
                 echo "📦 Injecting Data via Docker CP..."
                 
-                // 1. Create the container (but don't start it yet)
+                // 1. Remove existing container if it exists to avoid the name conflict
+                sh "docker rm -f macro_processor || true"
+                
+                // 2. Create the new container
                 sh "docker create --name macro_processor --user 0:0 macro-engine-local:latest"
                 
-                // 2. Push the Excel file into the container
+                // 3. Push the Excel file into the container
                 sh "docker cp external_data/GBweb_Row_Format.xlsx macro_processor:/tmp/source_data.xlsx"
                 
-                // 3. Start the container AND run the python command in one go
-                // We use 'docker run' with the volume mapped result or 'docker start' with a trick
-                // Actually, the simplest 'bulletproof' way is this:
+                // 4. Run the conversion script
                 sh """
                     docker run --rm --user 0:0 \
                     -v ${WORKSPACE}/external_data/GBweb_Row_Format.xlsx:/tmp/source_data.xlsx \
@@ -30,9 +31,6 @@ pipeline {
                     macro-engine-local:latest \
                     python3 -c "import pandas as pd; df = pd.read_excel('/tmp/source_data.xlsx', sheet_name='UNEMP'); df.to_csv('/tmp/output_data/tealbook_unemployment.csv', index=False); print('✅ Success: CSV generated')"
                 """
-                
-                // 4. Clean up the manual container from step 1 just in case
-                sh "docker rm -f macro_processor || true"
                 
                 sh "chown -R \$(id -u):\$(id -g) data results || true"
             }
