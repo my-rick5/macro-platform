@@ -8,60 +8,52 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "🧹 Targeted cleanup..."
-                script {
-                    sh "docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f"
-                    sh "mkdir -p results models"
-                }
+                sh "mkdir -p results models"
+                // Clean up any dangling containers from previous failed runs
+                sh "docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f"
             }
         }
 
         stage('Fetch Model Logic') {
             steps {
-                echo "🧠 Isolating model.xml..."
+                echo "🧠 Preparing model.xml..."
                 sh "cp pyfrbus/models/model.xml ./model.xml"
             }
         }
 
         stage('Run Engine') {
             steps {
-                echo "🧪 Running Structural Validation..."
                 script {
                     def workspaceRelPath = WORKSPACE.replace("/var/jenkins_home/", "")
                     
-                    // 1. Install system deps (including SWIG), install pyfrbus, and run tests
+                    // We run as the 'spark' user defined in your Dockerfile. 
+                    // We only mount the WORKSPACE to /home/spark/data so we don't 
+                    // overwrite the pre-installed code in /home/spark/src or /home/spark/.local
+                    
+                    echo "🧪 Running Structural Validation..."
                     sh """
-                        docker run --rm --user 0:0 \
+                        docker run --rm \
                         -v jenkins_home:/var/jenkins_home \
-                        -w /var/jenkins_home/${workspaceRelPath} \
-                        -e PYTHONPATH=. \
-                        ${DOCKER_IMAGE} bash -c '
-                            apt-get update && \
-                            apt-get install -y gcc libsuitesparse-dev swig libblas-dev && \
-                            pip install pytest && \
-                            pip install -e pyfrbus/ && \
-                            python3 -m pytest tests/test_model_load.py
-                        '
+                        -w /home/spark \
+                        ${DOCKER_IMAGE} python3 -m pytest tests/test_model_load.py
                     """
 
-                    echo "🚀 Running Engine: Solving for Add Factors (e)..."
-                    // 2. Run the actual engine script
+                    echo "🚀 Running Engine..."
                     sh """
-                        docker run --rm --user 0:0 \
-                        --memory='6g' --memory-swap='6g' \
+                        docker run --rm \
+                        --memory='6g' \
                         -v jenkins_home:/var/jenkins_home \
-                        -w /var/jenkins_home/${workspaceRelPath} \
-                        -e PYTHONPATH=. \
+                        -v ${WORKSPACE}/results:/home/spark/results \
+                        -w /home/spark \
                         ${DOCKER_IMAGE} python3 src/engine.py
                     """
                 }
             }
         }
-    } // End of stages
+    }
 
     post {
         always {
-            echo "📦 Archiving Build Artifacts..."
             archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
         }
     }
