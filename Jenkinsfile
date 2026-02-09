@@ -9,26 +9,29 @@ pipeline {
         }
         stage('Process Data') {
             steps {
-                echo "📡 Downloading directly via Curl..."
-                // -L follows redirects, -A mimics Chrome, -o saves the file
+                echo "📡 Downloading via Curl with Referer Handshake..."
                 sh """
-                    curl -L -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" \
+                    curl -L -k \
+                    -H "Referer: https://www.philadelphiafed.org/surveys-and-data/real-time-data-research/tealbook-data-set" \
+                    -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0" \
                     -o data/tealbook_raw.xlsx \
                     "https://www.philadelphiafed.org/-/media/frbp/assets/surveys-and-data/tealbook/philadelphia_data_set.xlsx"
                 """
                 
-                echo "🧪 Verifying file type..."
-                sh "file data/tealbook_raw.xlsx"
+                script {
+                    // Fail the build if the file is smaller than 50KB (likely an HTML error page)
+                    def fileSize = sh(script: "stat -c%s data/tealbook_raw.xlsx", returnStdout: true).trim().toInteger()
+                    if (fileSize < 50000) {
+                        error "❌ Downloaded file is only ${fileSize} bytes. The Fed is still blocking us with an HTML page."
+                    }
+                }
 
-                echo "⚙️ Converting Excel to CSV inside Container..."
+                echo "⚙️ Converting Excel to CSV..."
                 sh """
                     docker run --rm --user 0:0 \
                     -v ${WORKSPACE}/data:/home/spark/data \
-                    -v ${WORKSPACE}/results:/home/spark/results \
-                    macro-engine-local:latest python3 -c "import pandas as pd; df = pd.read_excel('/home/spark/data/tealbook_raw.xlsx', sheet_name='RUC'); df.to_csv('/home/spark/data/tealbook_unemployment.csv', index=False); print('✅ Conversion Successful')"
+                    macro-engine-local:latest python3 -c "import pandas as pd; df = pd.read_excel('/home/spark/data/tealbook_raw.xlsx', sheet_name='RUC'); df.to_csv('/home/spark/data/tealbook_unemployment.csv', index=False)"
                 """
-                
-                // Fix permissions for Jenkins UI
                 sh "chown -R \$(id -u):\$(id -g) data results || true"
             }
         }
@@ -47,7 +50,6 @@ pipeline {
             }
         }
         cleanup {
-            echo "🧹 Workspace cleanup..."
             sh "rm -rf data/* results/*"
         }
     }
