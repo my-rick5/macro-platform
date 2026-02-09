@@ -4,7 +4,7 @@ pipeline {
     parameters {
         choice(name: 'BACKTEST_YEAR', 
                choices: ['2004', '2005', '2006', '2007', '2008'], 
-               description: 'Tealbook Year for Simulation')
+               description: 'Select Tealbook Year')
     }
 
     environment {
@@ -16,7 +16,8 @@ pipeline {
             steps {
                 sh "mkdir -p results data"
                 sh "chmod 777 results data"
-                sh "rm -f results/*.csv data/*.txt results/*.xml"
+                // Clean only at start to ensure a fresh run
+                sh "rm -f results/* data/*"
             }
         }
 
@@ -26,37 +27,40 @@ pipeline {
             }
         }
 
-        stage('Fetch Macro Data') {
+        stage('Fetch & Process Data') {
             steps {
-                sh "docker run --rm --user 0:0 -v ${WORKSPACE}/data:/home/spark/data ${IMAGE_NAME}:latest python3 src/fetch_tealbook.py"
+                // Using root to ensure the container can write to host-mounted volumes
+                sh """
+                    docker run --rm --user 0:0 \
+                    -v ${WORKSPACE}/data:/home/spark/data \
+                    -v ${WORKSPACE}/results:/home/spark/results \
+                    ${IMAGE_NAME}:latest python3 src/fetch_tealbook.py
+                """
             }
         }
 
         stage('Unit Tests') {
             steps {
-                sh "docker run --rm --user 0:0 -v ${WORKSPACE}/results:/home/spark/results ${IMAGE_NAME}:latest pytest tests/ --junitxml=results/test-reports.xml"
-            }
-        }
-
-        stage('Production Simulation') {
-            when { branch 'main' }
-            steps {
-                script {
-                    def taskIndex = params.BACKTEST_YEAR.toInteger() - 2004
-                    sh "docker run --rm --user 0:0 -v ${WORKSPACE}/results:/home/spark/results -v ${WORKSPACE}/data:/home/spark/data -e CLOUD_RUN_TASK_INDEX=${taskIndex} ${IMAGE_NAME}:latest python3 src/engine.py"
-                }
+                sh """
+                    docker run --rm --user 0:0 \
+                    -v ${WORKSPACE}/results:/home/spark/results \
+                    ${IMAGE_NAME}:latest pytest tests/ --junitxml=results/test-reports.xml
+                """
             }
         }
     }
 
     post {
-        always {
-            // Fix: Changed allowEmptyResults to allowEmptyArchive for artifacts
+        success {
+            // Archive results while they still exist
             junit testResults: 'results/*.xml', allowEmptyResults: true
             archiveArtifacts artifacts: 'results/*.csv, data/*.txt', allowEmptyArchive: true
-            
-            echo "🧹 Cleaning up workspace..."
-            sh "rm -f results/* data/*"
+            echo "🏁 Build successful! Artifacts archived."
+        }
+        cleanup {
+            // This block runs AFTER success/failure blocks, ensuring files aren't deleted too early
+            echo "🧹 Cleaning up workspace directories..."
+            sh "rm -rf data/* results/*"
         }
     }
 }
