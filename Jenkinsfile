@@ -22,10 +22,16 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Ultimate Structural Fix..."
+                    echo "📦 Ultimate Structural Fix & Dependency Install..."
                     sh """
+                        # 1. Install dependencies using the setup.py before we move things
+                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
+                        
+                        # 2. Set up the clean library path
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/pyfrbus_lib
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus/. /opt/pyfrbus_lib/
+                        
+                        # 3. Remove the source to prevent shadowing
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
