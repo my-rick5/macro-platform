@@ -8,40 +8,27 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "🧹 Targeted cleanup: Only killing macro-engine containers..."
+                echo "🧹 Targeted cleanup..."
                 script {
-                    // SAFETY FILTER: This specifically only targets the engine image.
-                    // It will NOT see or kill the 'jenkins/jenkins' container.
                     sh "docker ps -a -q --filter ancestor=${DOCKER_IMAGE} | xargs -r docker rm -f"
-                    
-                    sh "docker volume prune -f --filter 'label!=keep'"
-                    sh "mkdir -p ${WORKSPACE}/results ${WORKSPACE}/models"
+                    sh "mkdir -p results models"
                 }
             }
         }
 
         stage('Fetch Model Logic') {
             steps {
-                echo "🧠 Locating model equations from local directory..."
-                script {
-                    // Check if the file exists in your repo's pyfrbus folder
-                    // Adjust the path if model.xml is directly in pyfrbus/
-                    sh "cp pyfrbus/models/model.xml ./model.xml || cp pyfrbus/model.xml ./model.xml"
-                    
-                    echo "✅ model.xml isolated for simulation."
-                }
+                echo "🧠 Isolating model.xml..."
+                // Based on your tree: pyfrbus/models/model.xml exists
+                sh "cp pyfrbus/models/model.xml ./model.xml"
             }
         }
 
         stage('Run Engine') {
             steps {
                 echo "🧪 Running Structural Validation..."
-                sh """
-                    docker run --rm --user 0:0 \
-                    -v ${WORKSPACE}:/home/spark \
-                    -w /home/spark \
-                    ${DOCKER_IMAGE} bash -c "pip install pytest && python3 -m pytest tests/test_model_load.py"
-                """
+                // We wrap the whole command in single quotes so the && stays inside the container
+                sh "docker run --rm --user 0:0 -v ${WORKSPACE}:/home/spark -w /home/spark ${DOCKER_IMAGE} bash -c 'pip install pytest && python3 -m pytest tests/test_model_load.py'"
                 
                 echo "🚀 Running Engine: Solving for Add Factors (e)..."
                 sh """
@@ -53,20 +40,12 @@ pipeline {
                 """
             }
         }
-    } // End of Stages
+    }
 
     post {
         always {
             echo "📦 Archiving Build Artifacts..."
-            archiveArtifacts artifacts: 'results/*.csv, data/*.csv, test-reports/*.xml', 
-                             fingerprint: true, 
-                             allowEmptyArchive: false
-        }
-        success {
-            echo "✅ Build Successful: Structural residuals isolated."
-        }
-        failure {
-            echo "❌ Build Failed. Check console for SolverStalled or Hardware Guard errors."
+            archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
         }
     }
 }
