@@ -22,19 +22,23 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Preserving Package Namespace..."
+                    echo "📦 Precision Namespace Alignment..."
                     sh """
-                        # 1. Standard install
+                        # 1. Standard install for dependencies
                         docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install .
                         
-                        # 2. Setup a clean platform directory
+                        # 2. Setup a clean parent directory
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         
-                        # 3. Copy the FOLDER, not the contents. 
+                        # 3. Copy the inner package folder to the parent
                         # This creates /opt/macro_platform/pyfrbus/
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/pyfrbus /opt/macro_platform/
                         
-                        # 4. Cleanup source to prevent shadowing
+                        # 4. Debug: Let's see exactly where things landed
+                        echo "--- Container Directory Structure ---"
+                        docker exec ${CONTAINER_NAME} ls -d /opt/macro_platform/pyfrbus || echo "❌ Folder missing!"
+                        
+                        # 5. Cleanup
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
 
@@ -43,11 +47,12 @@ pipeline {
                     echo "🔧 Safety Check: Verifying Package Import..."
                     sh """
                         docker exec -e PYTHONPATH=${combinedPath} \
-                        ${CONTAINER_NAME} python3 -c 'import pyfrbus.frbus; print(\"✅ Namespace Import Success!\")'
+                        ${CONTAINER_NAME} python3 -c 'import pyfrbus; from pyfrbus import frbus; print(\"✅ Namespace Import Success!\")'
                     """
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
+                        # Updated path for model.xml based on the new structure
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/pyfrbus/models/model.xml /home/spark/models/model.xml
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                         docker exec ${CONTAINER_NAME} chmod -R 777 /home/spark /opt/macro_platform
