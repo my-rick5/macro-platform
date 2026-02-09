@@ -24,33 +24,32 @@ pipeline {
         stage('Run Engine') {
             steps {
                 script {
-                    def workspaceRelPath = WORKSPACE.replace("/var/jenkins_home/", "")
-                    
-                    // We run as the 'spark' user defined in your Dockerfile. 
-                    // We only mount the WORKSPACE to /home/spark/data so we don't 
-                    // overwrite the pre-installed code in /home/spark/src or /home/spark/.local
+                    // hostPath is the Jenkins workspace on the server
+                    def hostPath = WORKSPACE 
                     
                     echo "🧪 Running Structural Validation..."
+                    // We mount the workspace to /workspace inside the container
                     sh """
                         docker run --rm \
-                        -v jenkins_home:/var/jenkins_home \
-                        -w /home/spark \
+                        -v ${hostPath}:/workspace \
+                        -w /workspace \
                         ${DOCKER_IMAGE} python3 -m pytest tests/test_model_load.py
                     """
-
+        
                     echo "🚀 Running Engine..."
+                    // We mount only the needed folders so we don't overwrite /home/spark/.local
                     sh """
                         docker run --rm \
                         --memory='6g' \
-                        -v jenkins_home:/var/jenkins_home \
-                        -v ${WORKSPACE}/results:/home/spark/results \
+                        -v ${hostPath}/models:/home/spark/models \
+                        -v ${hostPath}/data:/home/spark/data \
+                        -v ${hostPath}/results:/home/spark/results \
                         -w /home/spark \
                         ${DOCKER_IMAGE} python3 src/engine.py
                     """
                 }
             }
         }
-    }
 
     post {
         always {
