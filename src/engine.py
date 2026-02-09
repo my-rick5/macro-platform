@@ -16,7 +16,7 @@ def run_pro_engine():
     check_hardware_readiness()
     
     print("🚀 Initializing FRB/US Structural Engine...")
-    df = load_data("data/y_unemp.csv") 
+    df = load_data("/home/spark/data/y_unemp.csv") 
     
     # Ensure XGAP exists (Common mapping fix)
     if 'GAP' in df.columns: df['XGAP'] = df['GAP']
