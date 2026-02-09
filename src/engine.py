@@ -1,61 +1,46 @@
 import pandas as pd
-import os
+import psutil
 import sys
+from pyfrbus import Frbus
+from pyfrbus.load_data import load_data
 
-def run_macro_engine():
-    # The 'Process Data' stage in Jenkins saves the file here
-    input_file = "data/tealbook_unemployment.csv"
-    output_dir = "results"
-    output_file = os.path.join(output_dir, "forecast_summary.csv")
-
-    print(f"🚀 Starting Macro Engine...")
-
-    # 1. Validation: Ensure input exists
-    if not os.path.exists(input_file):
-        print(f"❌ Error: {input_file} not found. Ensure 'Process Data' stage succeeded.")
+def check_hardware_readiness():
+    mem = psutil.virtual_memory()
+    available_gb = mem.available / (1024 ** 3)
+    print(f"🖥️  Hardware Check: {available_gb:.2f} GB RAM available.")
+    if available_gb < 3.5:
+        print("❌ ERROR: Insufficient RAM. FRB/US structural solving requires ~4GB.")
         sys.exit(1)
 
-    # 2. Load Data
-    try:
-        # The Row Format CSV has the date in the first column
-        df = pd.read_csv(input_file)
-        print(f"📊 Loaded {len(df)} forecast vintages.")
-        
-        # 3. Processing Logic (Row Format specific)
-        # In the Phil Fed Row Format, the first column is the 'Date' (e.g., 20040128)
-        # The subsequent columns are the forecast values for different quarters.
-        
-        # Get the latest available vintage (the last row)
-        latest_vintage = df.iloc[-1]
-        vintage_date = latest_vintage.iloc[0]
-        
-        # Convert all other columns to numeric, ignoring the date column
-        forecast_values = pd.to_numeric(latest_vintage.iloc[1:], errors='coerce').dropna()
-        
-        if forecast_values.empty:
-            print(f"⚠️ Warning: No numeric forecast data found for vintage {vintage_date}")
-            mean_forecast = 0.0
-        else:
-            mean_forecast = forecast_values.mean()
+def run_pro_engine():
+    check_hardware_readiness()
+    
+    print("🚀 Initializing FRB/US Structural Engine...")
+    df = load_data("data/y_unemp.csv") 
+    
+    # Ensure XGAP exists (Common mapping fix)
+    if 'GAP' in df.columns: df['XGAP'] = df['GAP']
 
-        # 4. Create Summary DataFrame
-        summary_df = pd.DataFrame([{
-            "vintage_date": str(int(vintage_date)),
-            "mean_unemployment_forecast": round(mean_forecast, 2),
-            "forecast_horizon_quarters": len(forecast_values)
-        }])
+    model = Frbus("models/model.xml")
 
-        # 5. Output Results
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-            
-        summary_df.to_csv(output_file, index=False)
-        print(f"✅ Success! Summary for vintage {vintage_date} saved to {output_file}")
-        print(summary_df.to_string(index=False))
+    print("⚖️  Solving for Tracking Residuals (e)...")
+    results = model.init_trac(data=df, start=2015.0, end=2025.75, mce=None)
 
-    except Exception as e:
-        print(f"❌ Critical Engine Failure: {str(e)}")
-        sys.exit(1)
+    # --- JUDGMENT ALERT LOGIC ---
+    # We look at LUR_trac (the add factor)
+    threshold = 0.5
+    results['judgment_alert'] = results['LUR_trac'].apply(
+        lambda x: '🚨 HIGH JUDGMENT' if abs(x) > threshold else '✅ MODEL DRIVEN'
+    )
+
+    # Identify the most recent alert
+    alerts = results[results['judgment_alert'].str.contains('🚨')]
+    if not alerts.empty:
+        print(f"\n⚠️  ALERT: Detected {len(alerts)} quarters with high manual judgment.")
+        print(alerts[['LUR_trac', 'judgment_alert']].tail(3))
+
+    results.to_csv("results/final_judgment_report.csv")
+    print("\n✅ Build #53 Complete. Report archived.")
 
 if __name__ == "__main__":
-    run_macro_engine()
+    run_pro_engine()
