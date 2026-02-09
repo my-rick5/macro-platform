@@ -32,17 +32,20 @@ pipeline {
                     def hostPath = WORKSPACE 
                     
                     echo "🧪 Running Structural Validation..."
-                    // Mounts the whole workspace so pytest can see everything
+                    // Added --user 0:0 to fix the Permission Denied/Errno 13 issue
                     sh """
-                        docker run --rm \
+                        docker run --rm --user 0:0 \
                         -v ${hostPath}:/workspace \
                         -w /workspace \
-                        ${DOCKER_IMAGE} python3 -m pytest tests/test_model_load.py
+                        ${DOCKER_IMAGE} python3 -m pytest /workspace/tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
-                    // Selective mounts to avoid overwriting /home/spark/.local
+                    // The engine runs as the default 'spark' user 
+                    // We also ensure the data file name matches your engine.py (y_unemp.csv)
                     sh """
+                        cp data/tealbook_unemployment.csv data/y_unemp.csv
+                        
                         docker run --rm \
                         --memory='6g' \
                         -v ${hostPath}/models:/home/spark/models \
