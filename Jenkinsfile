@@ -4,7 +4,7 @@ pipeline {
     parameters {
         choice(name: 'BACKTEST_YEAR', 
                choices: ['2004', '2005', '2006', '2007', '2008'], 
-               description: 'Select Tealbook Year')
+               description: 'Select the year for the Tealbook backtest.')
     }
 
     environment {
@@ -14,9 +14,9 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
+                // Ensure directories exist and are fresh
                 sh "mkdir -p results data"
                 sh "chmod 777 results data"
-                // Clean only at start to ensure a fresh run
                 sh "rm -f results/* data/*"
             }
         }
@@ -29,7 +29,8 @@ pipeline {
 
         stage('Fetch & Process Data') {
             steps {
-                // Using root to ensure the container can write to host-mounted volumes
+                echo "Running Data Fetch for ${params.BACKTEST_YEAR}..."
+                // --user 0:0 ensures root-level write access to the host-mounted volume
                 sh """
                     docker run --rm --user 0:0 \
                     -v ${WORKSPACE}/data:/home/spark/data \
@@ -41,6 +42,7 @@ pipeline {
 
         stage('Unit Tests') {
             steps {
+                // Generates the XML report that Jenkins needs for the UI
                 sh """
                     docker run --rm --user 0:0 \
                     -v ${WORKSPACE}/results:/home/spark/results \
@@ -52,13 +54,18 @@ pipeline {
 
     post {
         success {
-            // Archive results while they still exist
+            // Archive while the files are guaranteed to still be in the workspace
             junit testResults: 'results/*.xml', allowEmptyResults: true
             archiveArtifacts artifacts: 'results/*.csv, data/*.txt', allowEmptyArchive: true
-            echo "🏁 Build successful! Artifacts archived."
+            echo "🏁 Build successful! Artifacts and test reports have been recorded."
         }
+        
+        failure {
+            echo "❌ Build failed. Checking logs for permission or data errors."
+        }
+
         cleanup {
-            // This block runs AFTER success/failure blocks, ensuring files aren't deleted too early
+            // This runs LAST. It safely wipes the workspace AFTER archiving is finished.
             echo "🧹 Cleaning up workspace directories..."
             sh "rm -rf data/* results/*"
         }
