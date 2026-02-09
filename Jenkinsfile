@@ -21,16 +21,15 @@ pipeline {
                     echo "🧪 Preparing Container & Data..."
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     
-                    // Flattened copy
+                    // CRITICAL FIX: We copy the INNER pyfrbus content directly to /home/spark/pyfrbus
                     sh "docker cp pyfrbus/pyfrbus/. ${CONTAINER_NAME}:/home/spark/pyfrbus/"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "🔍 DEBUG: Probing Container Filesystem..."
+                    echo "🔧 Ensuring Package Integrity..."
+                    // Safety net: ensure __init__ exists at the root and package level
                     sh """
-                        echo '--- Directory Structure of /home/spark/pyfrbus ---'
-                        docker exec ${CONTAINER_NAME} ls -R /home/spark/pyfrbus
-                        echo '--- Python Path & Import Check ---'
-                        docker exec -e PYTHONPATH=/home/spark ${CONTAINER_NAME} python3 -c "import sys; print('\\n'.join(sys.path)); import pyfrbus; print('SUCCESS: pyfrbus imported from:', pyfrbus.__file__)" || echo "FAILURE: pyfrbus still not found"
+                        docker exec ${CONTAINER_NAME} touch /home/spark/pyfrbus/__init__.py
+                        docker exec ${CONTAINER_NAME} touch /home/spark/__init__.py
                     """
 
                     sh """
@@ -40,6 +39,7 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
+                    // Pointing PYTHONPATH to /home/spark makes 'pyfrbus' a top-level package
                     sh """
                         docker exec -w /source_code \
                         -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark:/source_code \
