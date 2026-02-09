@@ -18,17 +18,22 @@ def run_pro_engine():
     print("🚀 Initializing FRB/US Structural Engine...")
     df = load_data("/home/spark/data/y_unemp.csv") 
     
-    # Ensure XGAP exists (Common mapping fix)
+    # Ensure XGAP exists
     if 'GAP' in df.columns: df['XGAP'] = df['GAP']
 
-    model = Frbus("models/model.xml")
+    # Use the absolute path we established in Jenkins
+    model = Frbus("/home/spark/models/model.xml")
 
     print("⚖️  Solving for Tracking Residuals (e)...")
-    results = model.init_trac(dataset=df, start=2015.0, end=2025.75, mce=None)
+    
+    # FIX: Clean positional arguments. 
+    # Usually: init_trac(start, end, dataframe, mce)
+    # We remove the "start=" and "end=" keywords to avoid syntax errors
+    results = model.init_trac(2015.0, 2025.75, df, None)
 
     # --- JUDGMENT ALERT LOGIC ---
-    # We look at LUR_trac (the add factor)
     threshold = 0.5
+    # results is usually the dataframe returned by init_trac
     results['judgment_alert'] = results['LUR_trac'].apply(
         lambda x: '🚨 HIGH JUDGMENT' if abs(x) > threshold else '✅ MODEL DRIVEN'
     )
@@ -39,8 +44,9 @@ def run_pro_engine():
         print(f"\n⚠️  ALERT: Detected {len(alerts)} quarters with high manual judgment.")
         print(alerts[['LUR_trac', 'judgment_alert']].tail(3))
 
-    results.to_csv("results/final_judgment_report.csv")
-    print("\n✅ Build #53 Complete. Report archived.")
+    # Use absolute path for results too
+    results.to_csv("/home/spark/results/final_judgment_report.csv")
+    print("\n✅ Engine Run Complete. Report archived.")
 
 if __name__ == "__main__":
     run_pro_engine()

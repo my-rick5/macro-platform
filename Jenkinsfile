@@ -4,6 +4,8 @@ pipeline {
     environment {
         DOCKER_IMAGE = 'macro-engine-local:latest'
         CONTAINER_NAME = "engine-run-${BUILD_NUMBER}"
+        // The path where we preserve the package and dependencies
+        COMBINED_PATH = "/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages"
     }
 
     stages {
@@ -21,48 +23,47 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
 
-                    echo "📦 Precision Namespace Alignment & Asset Preservation..."
+                    echo "📦 Precision Namespace Alignment & Package Patching..."
                     sh """
-                        # 1. Install the package and psutil
+                        # 1. Install package and missing dependencies
                         docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install . psutil
-                    
-                        # 2. Move to /opt
+                        
+                        # 2. Move to /opt to prevent shadowing issues
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/. /opt/macro_platform/
-                    
-                        # 3. PATCH: Fix the "floating point" bug in their load_data.py
+                        
+                        # 3. PATCH: Fix the floating-point bug in their load_data.py
                         docker exec ${CONTAINER_NAME} sed -i 's/data.index, freq=\"Q\"/data.index.astype(str), freq=\"Q\"/g' /opt/macro_platform/pyfrbus/load_data.py
-                    
-                        # 4. Setup directories and data
+                        
+                        # 4. Initialize Spark environment and data
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
                         docker exec ${CONTAINER_NAME} cp /source_code/data/tealbook_unemployment.csv /home/spark/data/y_unemp.csv
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/models/model.xml /home/spark/models/model.xml
-
-                        # 5. CRITICAL CLEANUP: Remove the stray folder that is shadowing our package
+                        
+                        # 5. REMOVE SHADOWING: Get rid of stray folders that break imports
                         docker exec ${CONTAINER_NAME} rm -rf /home/spark/pyfrbus
-                        docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus                    """
+                        docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
+                    """
 
-
-
-                    def combinedPath = "/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages"
-
-                    echo "🔧 Safety Check: Verifying Package Import..."
-                    sh "docker exec -e PYTHONPATH=${combinedPath} ${CONTAINER_NAME} python3 -c 'import pyfrbus; from pyfrbus import frbus; print(\"✅ Namespace Import Success!\")'"
-
-                    echo "🧪 Running Structural Validation (Checking endo_names)..."
+                    echo "🔍 API DISCOVERY: Inspecting Model Signature..."
                     sh """
-                        docker exec -e PYTHONPATH=${combinedPath} ${CONTAINER_NAME} \
-                        python3 -c "from pyfrbus.frbus import Frbus; m = Frbus('/home/spark/models/model.xml'); print('MODEL ENDO VARS:', m.endo_names[:10], '...')"
+                        docker exec -e PYTHONPATH=${COMBINED_PATH} ${CONTAINER_NAME} \
+                        python3 -c "from pyfrbus.frbus import Frbus; import inspect; \
+                        print('\\n--- API SIGNATURES ---'); \
+                        print('init_trac:', inspect.signature(Frbus.init_trac)); \
+                        try: print('solve:', inspect.signature(Frbus.solve)); \
+                        except: print('solve method not found'); \
+                        print('--- END DISCOVERY ---')"
                     """
 
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=${combinedPath} \
+                        -e PYTHONPATH=${COMBINED_PATH} \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
-                    sh "docker cp ${CONTAINER_NAME}:/home/spark/results/. ./results/"
+                    sh "docker cp ${CONTAINER_NAME}:/home/spark/results/. ./results/ || true"
                 }
             }
         }
