@@ -62,7 +62,8 @@ pipeline {
                     echo "🕵️ Discovery Mode: Pulling internal attribute names..."
                     sh """
                         docker exec -e PYTHONPATH=/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages \
-                        engine-run-${env.BUILD_NUMBER} python3 -c 'from pyfrbus import Frbus; m = Frbus("/home/spark/models/model.xml"); print("FOUND_ATTRS:", [a for a in dir(m) if not a.startswith("_")])'
+                        engine-run-${env.BUILD_NUMBER} \
+                        python3 -c "from pyfrbus import Frbus; m = Frbus('/home/spark/models/model.xml'); print('FOUND_ATTRS:', [a for a in dir(m) if not a.startswith('_')])"
                     """
         
                     echo "🚀 Running Engine..."
