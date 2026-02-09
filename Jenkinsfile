@@ -22,11 +22,8 @@ pipeline {
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
                     
-                    // NEW: Perform an editable install inside the container
-                    // This creates the link between the 'pyfrbus' name and the source code
-                    sh """
-                        docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e .
-                    """
+                    // Keep this! It successfully registered your package
+                    sh "docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install -e ."
 
                     sh """
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data /home/spark/results
@@ -35,17 +32,17 @@ pipeline {
                     """
 
                     echo "🧪 Running Structural Validation..."
-                    // Note: We no longer need the complex PYTHONPATH for pyfrbus itself!
+                    // We add the spark local path so root can find pytest
                     sh """
                         docker exec -w /source_code \
-                        -e PYTHONPATH=/source_code \
+                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code \
                         ${CONTAINER_NAME} python3 -m pytest tests/test_model_load.py
                     """
         
                     echo "🚀 Running Engine..."
                     sh """
                         docker exec -w /home/spark \
-                        -e PYTHONPATH=/source_code/src \
+                        -e PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/source_code/src \
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
