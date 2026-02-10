@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Expectations Override Engine Started.")
+print("💓 Heartbeat: API-Corrected Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -39,13 +39,15 @@ def run_pro_engine():
     # 2. Initialization & Identity-Lock Logic
     model = frbus.Frbus(model_xml)
     
-    # 🎯 FIX: EXPECTATIONS OVERRIDE (MCO MODE)
-    # Loosen convergence tolerance and increase iterations for the 80s hurdle
-    model.set_option('max_iter', 1000)
-    model.set_option('tolerance', 1e-3)
+    # 🎯 FIX: SOLVER SETTINGS DICTIONARY
+    # We pass these as kwargs to init_trac instead of calling set_option
+    solver_params = {
+        'max_iter': 1000,
+        'tolerance': 1e-3
+    }
     
     if 'mco_mode' not in df.columns:
-        print("🛠️  Engaging MCO Expectations Override for 1989Q4...")
+        print("🛠️  Engaging MCO Expectations Override...")
         df['mco_mode'] = 1.0  
 
     first_actual = df.index.min()
@@ -65,12 +67,13 @@ def run_pro_engine():
         return 0.20
 
     # 3. Persistent Anchor Loop
-    print(f"⚡ Establishing persistent identity-locked anchor at {first_actual}...")
+    print(f"⚡ Establishing anchor at {first_actual}...")
     init_passed = False
     attempts = 0
     while not init_passed and attempts < 150:
         try:
-            first_q_results = model.init_trac(first_actual, first_actual, df)
+            # Applying solver_params here
+            first_q_results = model.init_trac(first_actual, first_actual, df, **solver_params)
             for col in first_q_results.columns:
                 if col not in target_variables:
                     missing_registry[col] = float(first_q_results[col].iloc[0])
@@ -94,7 +97,8 @@ def run_pro_engine():
         while not window_passed and window_attempts < 100:
             try:
                 current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
-                results = model.init_trac(current_solve_start, current_solve_end, current_df)
+                # Applying solver_params here
+                results = model.init_trac(current_solve_start, current_solve_end, current_df, **solver_params)
                 for col in results.columns:
                     if col not in target_variables:
                         missing_registry[col] = float(results[col].iloc[-1])
@@ -116,7 +120,7 @@ def run_pro_engine():
     # 5. Final Export
     print(f"🔥 Exporting full MCO-stabilized residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
-    results = model.init_trac(first_actual, full_end, final_data)
+    results = model.init_trac(first_actual, full_end, final_data, **solver_params)
     results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
     print("✅ Build Successful. Timeline Complete.")
 
