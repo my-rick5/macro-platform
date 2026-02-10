@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Expectations-Neutral Engine Started.")
+print("💓 Heartbeat: Deep Debug Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -36,10 +36,16 @@ def run_pro_engine():
     target_variables = list(df.columns)
 
     model = frbus.Frbus(model_xml)
-    solver_params = {'max_iter': 1000, 'tolerance': 1e-3}
+
+    # 🎯 FIX: VERBOSE DEBUGGING & RESIDUAL TRACKING
+    solver_params = {
+        'max_iter': 1000, 
+        'tolerance': 1e-3,
+        'debug': True,           # 🔍 Enable low-level solver logs
+        'show_failed': 5,        # 📋 Print the 5 equations with highest residuals
+        'log_level': 'INFO'      # 📡 Ensure C++ messages pipe to Jenkins
+    }
     
-    # 🎯 FIX: ADAPTIVE EXPECTATIONS OVERRIDE
-    # Set mc_mode to 0 to decouple 1989Q4 from the 1990 recession forecast
     if 'mc_mode' not in df.columns:
         print("🧠 Switching to Adaptive Expectations for transition...")
         df['mc_mode'] = 0.0  
@@ -68,7 +74,6 @@ def run_pro_engine():
         jitter = 1 + (np.random.uniform(-0.0001, 0.0001))
         return base_val * jitter
 
-    # 3. Anchor logic (Safe Start)
     print(f"⚡ Establishing anchor at {first_actual}...")
     init_passed = False
     attempts = 0
@@ -82,15 +87,13 @@ def run_pro_engine():
             init_passed = True
             print("✅ Anchor Secure.")
         except Exception as e:
-            match = re.search(r'`([^`]+)`', str(e))
+            match = re.search(r'`([^`]+)`', str(e) or "")
             if match:
                 var = match.group(1).lower()
                 proxy_val = get_identity_locked_proxy(var)
                 if proxy_val is not None: df[var] = proxy_val
-                attempts += 1
-            else: attempts += 1
+            attempts += 1
 
-    # 4. Global Recursive Shield (Temporal Compression + Neutrality)
     current_solve_start = first_actual + 1
     while current_solve_start <= full_end:
         if current_solve_start < pd.Period('1991Q1', freq='Q'):
@@ -105,8 +108,6 @@ def run_pro_engine():
         while not window_passed and window_attempts < 100:
             try:
                 current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
-                
-                # Warm-start damping for transition
                 if current_solve_start < pd.Period('1991Q1', freq='Q'):
                     for var in missing_registry:
                         current_df.loc[current_solve_start:current_solve_end, var] = missing_registry[var]
@@ -122,11 +123,10 @@ def run_pro_engine():
                     var = match.group(1).lower()
                     proxy_val = get_identity_locked_proxy(var)
                     if proxy_val is not None: missing_registry[var] = proxy_val
-                    window_attempts += 1
-                else: window_attempts += 1
+                window_attempts += 1
 
         if not window_passed:
-            print(f"❌ Structural fail at window {current_solve_start}.")
+            print(f"❌ Structural fail at window {current_solve_start}. Check logs above for residual breakdown.")
             sys.exit(1)
         
         current_solve_start += 1 if current_solve_start < pd.Period('1991Q1', freq='Q') else 4
