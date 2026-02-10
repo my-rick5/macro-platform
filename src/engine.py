@@ -23,7 +23,7 @@ def run_pro_engine():
     df = pd.concat(data_frames, axis=1).sort_index()
     actual_data_cols = list(df.columns)
 
-    # 2. XML Scraper: Targeted Dummy Injection
+    # 2. XML Scraper with Scale-Aware Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -37,15 +37,27 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Use a very stable baseline. 
-                    # Adding a tiny epsilon to ensure no two dummies are exactly identical.
-                    new_data[var] = [1.0 + (i * 1e-9)] * len(df)
+                    # Use 1000.0 for things that look like Investment/Consumption (Level variables)
+                    # Use 1.0 for Price Indices, 0.05 for Rates
+                    if any(x in var for x in ['gr', 'gc', 'gi', 'gx']): base = 1000.0
+                    elif any(r in var for r in ['mpt', 'lur', 'pi', 'r']): base = 0.05
+                    else: base = 1.0
+                    
+                    new_data[var] = [base + (i * 1e-8)] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Padding & Cleaning
+    # 3. Targeted Scaler for Potential Culprits
+    # Force GRGOVF and GRRES into a safe nominal range (e.g., 500.0)
+    # since our diagnostic showed they were crashing at 0.1.
+    for culprit in ['grgovf', 'grres']:
+        if culprit in df.columns:
+            print(f"🔧 Rescaling {culprit.upper()} for solver stability...")
+            df[culprit] = df[culprit].clip(lower=500.0)
+
+    # 4. Padding & Numerical Cleanup
     df = df.sort_index()
     start_date = df.index.min()
     padding_dates = [start_date - i for i in range(1, 13)]
@@ -55,32 +67,25 @@ def run_pro_engine():
         padding_df[col] = df[col].iloc[0]
 
     df = pd.concat([padding_df, df]).sort_index()
-    # High floor to ensure no accidental log(0) during solver jumps
-    df = df.ffill().bfill().clip(lower=0.1).copy()
+    df = df.ffill().bfill().copy()
 
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
 
-    # 4. Engine Solve with Selective Tracking
+    # 5. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        
-        # We run the tracking. If it hits a log error on a dummy variable, 
-        # it usually means an identity is failing.
         results = model.init_trac(start_date, df.index.max(), df)
         
-        # FILTER: Only keep residuals for variables we actually have data for
-        # This prevents the final output from being cluttered with dummy residuals
         final_results = results[[c for c in results.columns if any(x in c for x in actual_data_cols)]]
-        
         print("✅ Engine Solve Successful.")
         final_results.to_csv(os.path.join(results_dir, "residuals.csv"))
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Identify the first column that has a zero or tiny value
-        culprit = df.columns[(df.iloc[0] < 0.11)].tolist()[:5]
-        print(f"🔍 Potential culprit variables (near floor): {culprit}")
+        # Identify the next variables at the floor if we fail again
+        new_culprits = df.columns[(df.iloc[-1] < 1.1)].tolist()[:5]
+        print(f"🔍 Next set of low-value variables: {new_culprits}")
         raise
 
 if __name__ == "__main__":
