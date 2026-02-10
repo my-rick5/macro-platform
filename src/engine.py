@@ -10,7 +10,7 @@ def run_pro_engine():
     results_dir = "/home/spark/results"
     os.makedirs(results_dir, exist_ok=True)
     
-    # 1. Load and Normalize
+    # 1. Load and Case-Normalize
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
 
@@ -24,7 +24,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. XML Scraper with Stochastic Decoupling
+    # 2. XML Scraper with Identity-Neutral Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -38,22 +38,20 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Base selection
+                    # Use neutral baselines to keep log(x) near 0 or stable levels
                     if any(x in var for x in ['pitarg', 'targ', 'pi']): base = 2.0
                     elif any(x in var for x in ['tr', 'tax', 'rt']): base = 0.15
                     elif any(x in var for x in ['gr', 'gc', 'gi', 'gx', 'gd', 'hgp']): base = 2000.0
                     else: base = 1.0
                     
-                    # STOCHASTIC DECOUPLING: Add a tiny random walk to each series
-                    # This prevents linear dependence in the Jacobian matrix
-                    noise = np.random.normal(0, 1e-5, size=len(df))
-                    new_data[var] = base + np.cumsum(noise)
+                    # Use a stable value with a micro-unique epsilon to satisfy identities
+                    new_data[var] = [base + (i * 1e-8)] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Padding & Cleaning
+    # 3. Deep Buffer Padding
     df = df.sort_index()
     start_date = df.index.min()
     padding_dates = [start_date - i for i in range(1, 13)]
@@ -62,25 +60,29 @@ def run_pro_engine():
         padding_df[col] = df[col].iloc[0]
 
     df = pd.concat([padding_df, df]).sort_index()
-    df = df.ffill().bfill().clip(lower=0.01).copy()
-
-    # 4. Engine Solve
+    
+    # 4. Engine Solve with Identity Preservation
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         
-        # Use the earliest date from processed data as the solve start
         solve_start = pd.PeriodIndex([f.index.min() for f in data_frames], freq='Q').min()
+        
+        # KEY STABILITY FIX: Use init_trac but ensure no zeros or negatives leak in
+        df = df.ffill().bfill().clip(lower=0.01).copy()
+        
         results = model.init_trac(solve_start, df.index.max(), df)
         
+        # Only extract residuals for the variables you care about
         mask = [c for c in results.columns if c.lower() in actual_data_cols or any(x in c.lower() for x in actual_data_cols)]
         print("✅ Engine Solve Successful.")
         results[mask].to_csv(os.path.join(results_dir, "residuals.csv"))
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Final diagnostic: Check for any infinite values produced during decoupling
-        print(f"🔍 Matrix Inf Check: {np.isinf(df.values).sum()} Infs found.")
+        # Identify if any specific series have fallen below the log-safety threshold
+        under_floor = (df < 0.02).sum().sum()
+        print(f"🔍 Diagnostic: {under_floor} series values are near the safety floor (0.01).")
         raise
 
 if __name__ == "__main__":
