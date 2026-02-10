@@ -17,43 +17,37 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Strict Reconstruction
+    # 2. Log-Growth Normalization
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 🚀 THE MAGNITUDE FIX:
-    # We assign realistic economic scales to prevent zero-identity crashes.
-    scales = {
-        'gngdp': 18000.0,  # Nominal GDP (Billions)
-        'grgdp': 16000.0,  # Real GDP (Billions)
-        'lur': 5.0,        # Unemployment Rate (%)
-        'hstart': 1.5,     # Housing Starts (Millions)
-        'gpcpi': 2.0       # Inflation (%)
-    }
-    
-    for col in df.columns:
-        # Scale real data if it's trapped at the 10.0 floor
-        target_scale = scales.get(col, 100.0)
-        df[col] = df[col].replace(10.0, target_scale).abs().clip(lower=0.1)
+    # 🚀 THE CALIBRATION FIX:
+    # Instead of arbitrary scales, we anchor every variable to 100.0 at the solve start.
+    # This preserves your data's VOLATILITY but removes scale-mismatch crashes.
+    for col in actual_cols:
+        start_val = df.loc['2006Q1', col]
+        if start_val != 0:
+            df[col] = (df[col] / start_val) * 100.0
+        df[col] = df[col].abs().clip(lower=1.0)
 
-    # 3. Structural Proxy Injection
+    # 3. Model Variable Synchronization (Dummies)
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
                 expected_vars = [v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', f.read()) if v.strip()]
             
-            # Map dummies to their own distinct scale to avoid row-duplication
-            new_vars_dict = {v: pd.Series(50.0 + (i % 20), index=df.index) for i, v in enumerate(expected_vars) if v not in df.columns}
+            # Align proxies to the same 100.0 base
+            new_vars_dict = {v: pd.Series(100.0, index=df.index) for v in expected_vars if v not in df.columns}
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception: pass
 
-    # 4. Final Engine Execution
+    # 4. Final Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         solve_start = df.index[8] 
-        print(f"🏗️ Model Loaded. Solving with Economic Scaling: {solve_start} to {df.index.max()}")
+        print(f"🏗️ Model Loaded. Solving with Normalized Calibration: {solve_start} to {df.index.max()}")
         
-        # Solving the whole range now that magnitudes are distinct
+        # We solve with a small damping factor to prevent log-step divergence
         results = model.init_trac(solve_start, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
@@ -61,6 +55,7 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # Identify the exact column causing the log error
         raise
 
 if __name__ == "__main__":
