@@ -18,11 +18,15 @@ pipeline {
         stage('Debug XML Structure') {
             steps {
                 script {
-                    echo "🔍 Inspecting XML formatting..."
-                    // Print first 30 lines
-                    sh "docker exec engine-run-219 head -n 30 /home/spark/models/model.xml"
-                    // Find the line containing dmptmax to see its attribute names
-                    sh "docker exec engine-run-219 grep -i 'dmptmax' /home/spark/models/model.xml | head -n 5"
+                    // Using env.BUILD_NUMBER ensures we target 'engine-run-221', 'engine-run-222', etc.
+                    def containerName = "engine-run-${env.BUILD_NUMBER}"
+                    echo "🔍 Inspecting XML formatting in ${containerName}..."
+                    
+                    // 1. Print the header
+                    sh "docker exec ${containerName} head -n 20 /home/spark/models/model.xml"
+                    
+                    // 2. Find exactly how dmptmax is defined (attributes vs tags)
+                    sh "docker exec ${containerName} grep -C 2 'dmptmax' /home/spark/models/model.xml"
                 }
             }
         }
