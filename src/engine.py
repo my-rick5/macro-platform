@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Auto-Scaling Window Engine Started.")
+print("💓 Heartbeat: Identity-Enforced Window Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -40,16 +40,28 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 🎯 2. NEW: UNIT ALIGNMENT PRE-CHECK
-    # Detects if variables like HSTART are in units/millions vs billions
-    print("⚖️ Normalizing units for structural consistency...")
+    # 🎯 2. UNIT ALIGNMENT & IDENTITY ENFORCEMENT
+    print("⚖️ Normalizing units and enforcing structural identities...")
+    
+    # Unit Normalization (from Build #427)
     for col in df.columns:
         avg_val = df[col].mean()
-        # Scale up if it's a 'Level' variable that is suspiciously small (< 10)
         is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
         if avg_val < 10 and not is_rate:
-            print(f"  ⚠️ Auto-scaling {col}: {avg_val:.2f} -> {avg_val * 1000:.2f}")
+            print(f"  ⚠️ Scaling {col}: {avg_val:.2f} -> {avg_val * 1000:.2f}")
             df[col] = df[col] * 1000
+
+    # Identity Enforcement (New for Build #428)
+    # Ensuring GNGDP = GRGDP + GPGDP to prevent log singularities
+    if all(x in df.columns for x in ['gngdp', 'grgdp', 'gpgdp']):
+        print("  🔄 Re-aligning GNGDP to perfectly match Real + Price components.")
+        df['gngdp'] = df['grgdp'] + df['gpgdp']
+
+    # Price Wedge Enforcement: Ensuring Headline PCE isn't wildly different from Core
+    if 'gppce' in df.columns and 'gppcex' in df.columns:
+        print("  🔄 Smoothing Price-Core wedge to prevent mathematical artifacts.")
+        # Clips the wedge to prevent extreme outliers that cause solver divergence
+        df['gppce'] = df['gppce'].clip(lower=df['gppcex'] - 1.0, upper=df['gppcex'] + 1.0)
     
     # 3. Initialization
     model = frbus.Frbus(model_xml)
@@ -86,7 +98,7 @@ def run_pro_engine():
                 # Solve window
                 results = model.init_trac(current_solve_start, current_solve_end, current_df)
                 
-                # Update registry with final period values of the window
+                # Capture state for hot-starting next window
                 for col in results.columns:
                     if col not in target_variables:
                         missing_registry[col] = float(results[col].iloc[-1])
@@ -98,17 +110,15 @@ def run_pro_engine():
                 match = re.search(r'`([^`]+)`', str(e))
                 if match:
                     var = match.group(1).lower()
-                    # Smart Start: Rates small, Levels anchored to scaled data avg
                     missing_registry[var] = 0.05 if any(x in var for x in ['r','pi','u']) else 1000.0
                 window_attempts += 1
             except (ValueError, exceptions.ComputationError):
-                # Oscillation Jitter to break singularities
                 jitter = 1.0 + (np.sin(window_attempts) * 0.02)
                 missing_registry = {k: v * jitter for k, v in missing_registry.items()}
                 window_attempts += 1
 
         if not window_passed:
-            print(f"❌ Structural fail at window {current_solve_start}. Limit reached.")
+            print(f"❌ Structural fail at window {current_solve_start}. Identity enforcement insufficient.")
             sys.exit(1)
         
         current_solve_start += 4
@@ -124,7 +134,7 @@ def run_pro_engine():
     final_cols = [v for v in target_variables if v in results.columns]
     final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
     results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
-    print("✅ Build Successful. Residuals saved.")
+    print("✅ Build Successful. Residuals exported.")
 
 if __name__ == "__main__":
     try:
