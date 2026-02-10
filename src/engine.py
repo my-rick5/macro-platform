@@ -18,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Singular-Growth "Ghost Economy" Injection
+    # 2. Unique Growth Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -30,16 +30,17 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 t = np.arange(len(df))
                 new_data = {}
-                for var in missing_vars:
-                    # MASSIVE BASELINE: 10,000 ensures subtractions stay positive
-                    # UNIFORM GROWTH: 1.005 ensures log(growth) is a constant 0.005
-                    new_data[var] = 10000.0 * (1.005 ** t)
+                for i, var in enumerate(missing_vars):
+                    # UNIQUE GROWTH: Every variable gets a distinct growth rate 
+                    # (e.g., 1.005001, 1.005002, etc.) to prevent divide-by-zero singularities.
+                    growth_rate = 1.005 + (i * 1e-7)
+                    new_data[var] = 10000.0 * (growth_rate ** t)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Final Stability Buffer
+    # 3. Stability Padding
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
@@ -48,7 +49,6 @@ def run_pro_engine():
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        # Force solve_start to be exactly at the start of the data
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
