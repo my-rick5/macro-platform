@@ -8,8 +8,6 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
-    
-    # FIXED: Changed 'exist_index' to 'exist_ok'
     os.makedirs(results_dir, exist_ok=True)
     
     # 1. Load and Normalize
@@ -26,11 +24,11 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # DYNAMIC SCALING: Maintain mirrored magnitude for stability
-    real_mean_magnitude = df[actual_data_cols].mean().mean()
-    print(f"📊 Mirroring scale magnitude: {real_mean_magnitude:.2f}")
+    # DYNAMIC FRACTIONAL ANCHORING
+    real_mean = df[actual_data_cols].mean().mean()
+    print(f"📊 Mirroring scale magnitude: {real_mean:.2f}")
 
-    # 2. Scraper with Mirror-Scale Injection
+    # 2. Scraper with Identity-Safe Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -44,17 +42,24 @@ def run_pro_engine():
                 t = np.arange(len(df))
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    if any(x in var for x in ['pitarg', 'targ', 'pi', 'r', 'lur']): 
+                    # Assign components smaller shares of the aggregate to keep identities positive
+                    if any(x in var for x in ['pitarg', 'targ', 'pi', 'r', 'lur']):
                         base = 2.0
-                    else: 
-                        base = real_mean_magnitude
+                    elif any(x in var for x in ['x', 'm', 'i', 'g']): # Components (Exports, Imports, Invest, Gov)
+                        base = real_mean * 0.2
+                    elif any(x in var for x in ['c', 'y']): # Major aggregates (Consumption, Income)
+                        base = real_mean * 0.7
+                    else:
+                        base = real_mean
                     
+                    # Trend + Unique Offset
                     new_data[var] = base + (t * 1e-6) + (i * 1e-8)
+                
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. History Buffer
+    # 3. Buffer and Final Solve
     df = df.sort_index()
     first_obs = df.index.min()
     padding_df = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 25)], freq='Q'), columns=df.columns)
@@ -63,7 +68,6 @@ def run_pro_engine():
     df = pd.concat([padding_df, df]).sort_index()
     df = df.ffill().bfill().clip(lower=0.1).copy()
 
-    # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
@@ -75,6 +79,9 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # Identify if any identity has collapsed to exactly zero
+        potential_zeros = (df == 0).sum().sum()
+        print(f"🔍 Numerical Health: {potential_zeros} absolute zeros found.")
         raise
 
 if __name__ == "__main__":
