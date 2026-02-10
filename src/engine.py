@@ -17,15 +17,16 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Reindex and Enforce Continuity
+    # 2. Log-Linear Reconstruction
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index)
 
-    # 🚀 THE GAP FIX: Interpolate across the ENTIRE timeline
-    # method='linear' handles the NaNs seen in Build #349's 2004Q4-2005Q2 slots.
-    df = df.interpolate(method='linear', limit_direction='both').ffill().bfill()
+    # 🚀 THE LOG-SAFE FIX: Interpolate in log-space
+    # This ensures that even if there is a gap, the 'path' between points is 
+    # always positive and exponentially smooth, preventing log(negative) crashes.
+    df = np.exp(np.log(df.clip(lower=0.1)).interpolate(method='linear')).ffill().bfill()
 
-    # 3. Apply Baseline Splicing (to ensure 2004 start stability)
+    # 3. Apply Stable Trend Splicing
     stable_trend = pd.Series([100 * (1.005**i) for i in range(len(full_index))], index=full_index)
     for col in df.columns:
         first_idx = df[col].first_valid_index()
@@ -33,7 +34,7 @@ def run_pro_engine():
             ratio = df.loc[first_idx, col] / stable_trend.loc[first_idx]
             df.loc[:first_idx, col] = stable_trend.loc[:first_idx] * ratio
 
-    # 4. Proxy Injection (following the same continuous logic)
+    # 4. Proxy Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -42,13 +43,14 @@ def run_pro_engine():
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception: pass
 
-    # 5. Final Sanitization and Model Solve
-    df = df.ffill().bfill().abs().clip(lower=0.1)
+    # 5. Final Engine Execution
+    # Strict floor of 0.5 to stay well clear of the log singularity
+    df = df.ffill().bfill().abs().clip(lower=0.5)
     
     try:
         model = frbus.Frbus(model_xml)
         solve_start = df.index[8] 
-        print(f"🏗️ Model Loaded. Solving CONTINUOUS range: {solve_start} to {df.index.max()}")
+        print(f"🏗️ Model Loaded. Solving LOG-LINEAR range: {solve_start} to {df.index.max()}")
         results = model.init_trac(solve_start, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
