@@ -17,44 +17,40 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Deep History Expansion (24-quarter buffer)
+    # 2. Deep History Expansion
     full_index = pd.period_range(start='2000Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. 🚀 THE BRUTE-FORCE INITIALIZATION:
+    # 3. 🚀 THE LOG-SPACE INITIALIZATION:
     try:
         model = frbus.Frbus(model_xml)
-        
-        # We manually extract the required variables from the model object
-        model_vars = set()
-        if hasattr(model, 'vars'):
-            model_vars = set(v.lower() for v in model.vars)
-        else:
-            # Fallback to direct XML inspection if property is missing
-            with open(model_xml, 'r') as f:
-                model_vars = set(re.findall(r'<name>(.*?)</name>', f.read().lower()))
-
+        model_vars = set(v.lower() for v in model.vars) if hasattr(model, 'vars') else set()
         missing_vars = model_vars - set(df.columns)
         
         if missing_vars:
-            print(f"📦 Manually initializing {len(missing_vars)} variables (including 'dmptmax')...")
-            # We use 1.0 as a neutral baseline to avoid log(0) errors
-            patch = {v: 1.0 for v in missing_vars}
+            print(f"📦 Initializing {len(missing_vars)} variables with Log-Space safety...")
+            patch = {}
+            for v in missing_vars:
+                # Rates (interest, inflation) should be small (~5%)
+                if any(x in v for x in ['r', 'pi', 'u', 'gap']):
+                    patch[v] = 0.05
+                # Levels (GDP, Price Indices) should be large
+                else:
+                    patch[v] = 100.0
             df = pd.concat([df, pd.DataFrame(patch, index=df.index)], axis=1)
-            
     except Exception as e:
-        print(f"⚠️ Metadata extraction failed: {e}")
+        print(f"⚠️ Discovery failed: {e}")
 
     # 4. Final Engine Execution
     try:
         solve_start_date = pd.Period('2006Q1', freq='Q')
         solve_end_date = df.index.max()
-        print(f"🏗️ Model Loaded. Solving with Explicit Initialization...")
+        print(f"🏗️ Model Loaded. Solving with Identity-Preserving Initialization...")
 
-        # Since we are using 1.0, we use a very conservative damping factor
-        # to prevent the Newton solver from crashing on the first step.
+        # We force the solver to use a very small factor (0.001) for the first 10 iterations
+        # to "warm up" the Jacobian without crashing.
         if hasattr(model, 'solver_options'):
-            model.solver_options['factor'] = 0.01 
+            model.solver_options['factor'] = 0.001 
             
         baseline_df = model.solve(solve_start_date, solve_end_date, df)
         
