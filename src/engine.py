@@ -18,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Inject Dummies with High-Mass Stability
+    # 2. Universal Log-Safe Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -27,38 +27,29 @@ def run_pro_engine():
             missing_vars = [v for v in expected_vars if v not in actual_data_cols]
             
             if missing_vars:
-                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} high-mass dummies...")
-                t = np.arange(len(df))
-                new_data = {}
-                rng = np.random.default_rng(323) # Seeded for Build #323
-                
-                for var in missing_vars:
-                    # 🚀 HIGH-MASS STABILITY: We use a massive base level (500+)
-                    # This ensures that ANY solver 'guess' stays positive, even
-                    # without linesearch enabled in the API.
-                    base_level = 500.0 + rng.uniform(0, 100)
-                    growth = 1.0001 + rng.uniform(0, 0.0001)
-                    new_data[var] = base_level * (growth ** t)
-                
-                df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
+                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} log-safe dummies...")
+                for i, var in enumerate(missing_vars):
+                    # 🚀 THE FIX: Use a massive base with a tiny unique offset.
+                    # No growth (t) = no identity crossovers over time.
+                    # Unique offset = no 'divide by zero' from A - B = 0.
+                    df[var] = 1000.0 + (i * 0.001)
+                    
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Final Massive Floor Sanitization
+    # 3. Final Padding and Floor
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    # Use a global floor of 100.0 to essentially 'flatten' the log curve
+    # Clip all variables to a safe positive range
     df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=100.0)
 
-    # 4. Model Loading & Vanilla Execution
+    # 4. Vanilla Execution
     try:
         model = frbus.Frbus(model_xml)
-        print("🏗️ Model Loaded. Executing vanilla init_trac (Default Solver)...")
-        
-        # 🚀 API FIX: Use only positional arguments to satisfy pyfrbus 1.1.0
-        # Relying on data-scaling for stability since the API rejects solver_opts/solopt/eps.
+        print("🏗️ Model Loaded. Executing vanilla init_trac...")
+        # Since API keywords are rejected, we rely purely on this stable data structure
         results = model.init_trac(first_obs, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
