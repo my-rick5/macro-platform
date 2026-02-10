@@ -21,29 +21,36 @@ def run_pro_engine():
     full_index = pd.period_range(start='2000Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. 🚀 THE ENTROPY PATCH:
+    # 3. 🚀 THE DOMAIN-SPECIFIC PATCH:
     try:
         model = frbus.Frbus(model_xml)
         all_vars = model.vars if hasattr(model, 'vars') else re.findall(r'<name>(.*?)</name>', open(model_xml).read())
         missing_vars = set(v.strip().lower() for v in all_vars) - set(df.columns)
         
         if missing_vars:
-            print(f"📦 Patching {len(missing_vars)} variables with unique jitter...")
-            # We add a unique increment (0.01 * i) to every variable.
-            # This 'breaks symmetry' in the Jacobian to prevent resid = nan.
-            patch = {v: 100.0 + (i * 0.01) for i, v in enumerate(missing_vars)}
+            print(f"📦 Patching {len(missing_vars)} variables with Domain Scaling...")
+            patch = {}
+            for i, v in enumerate(missing_vars):
+                # Distinguish between 'Rates/Deltas' and 'Levels'
+                if any(x in v for x in ['r', 'pi', 'u', 'd']):
+                    base = 5.0  # Safe base for interest rates or inflation
+                else:
+                    base = 10000.0 # Safe base for GDP-scale levels
+                patch[v] = base + (i * 0.01)
+            
             df = pd.concat([df, pd.DataFrame(patch, index=df.index)], axis=1)
     except Exception as e:
         print(f"⚠️ Discovery failed: {e}")
 
-    # 4. Engine Execution
+    # 4. Final Engine Execution
     try:
         solve_start_date = pd.Period('2006Q1', freq='Q')
         solve_end_date = df.index.max()
-        print(f"🏗️ Model Loaded. Solving with Numerical Entropy...")
+        print(f"🏗️ Model Loaded. Solving with Domain Stability...")
 
+        # We keep the damping factor to prevent log-step divergence
         if hasattr(model, 'solver_options'):
-            model.solver_options['factor'] = 0.1
+            model.solver_options['factor'] = 0.05 
             
         baseline_df = model.solve(solve_start_date, solve_end_date, df)
         
