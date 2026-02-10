@@ -4,10 +4,6 @@ import re
 
 def clean_fed_excel(excel_path, output_dir):
     print(f"🎬 Starting Preprocessor...")
-    if not os.path.exists(excel_path):
-        print(f"❌ CRITICAL: Excel file not found at {excel_path}")
-        return
-
     os.makedirs(output_dir, exist_ok=True)
     xls = pd.ExcelFile(excel_path)
     
@@ -16,51 +12,46 @@ def clean_fed_excel(excel_path, output_dir):
             continue
             
         print(f"🔎 Processing Sheet: {sheet}")
-        # Read sheet - row 1 (index 1) was identified as the header in your logs
         df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
-        
-        if df.empty:
-            continue
+        if df.empty: continue
 
-        # 1. Standardize the first column to be our 'date' column
-        # Greenbook files usually have the date in the first column (Index 0)
+        # 1. First column is our Date
         df.rename(columns={df.columns[0]: 'date'}, inplace=True)
         
-        # 2. Identify the variable name
-        # If the sheet is 'UNEMP', the model expects 'LUR'
+        # 2. Variable Name Mapping
         var_name = 'LUR' if 'unemp' in sheet.lower() else sheet.upper()
         
-        # 3. Clean the Date column
-        # Convert 1995:1 or 1995.1 or 1995Q1 to 1995Q1
+        # 3. Date Standardization (Handle 1967:Q1 etc)
         def standardize_date(val):
             s = str(val).strip()
-            # Replace common delimiters with 'Q'
             s = re.sub(r'[:.\- ]', 'Q', s)
-            # Ensure it matches YYYYQ#
             match = re.search(r'(\d{4})Q(\d)', s)
-            if match:
-                return f"{match.group(1)}Q{match.group(2)}"
-            return None
+            return f"{match.group(1)}Q{match.group(2)}" if match else None
 
         df['date'] = df['date'].apply(standardize_date)
         df = df.dropna(subset=['date'])
 
-        # 4. Extract the data column
-        # Usually, the 'latest' data is the LAST column in these row-format files
-        # because new vintages are added as new columns.
-        if len(df.columns) > 1:
-            # Take the date column and the very last column (latest vintage)
-            final_df = df[['date', df.columns[-1]]].copy()
+        # 4. DATA PICKER: Find the last column that is actually numeric
+        # This avoids accidentally grabbing a 'Vintage Date' column at the end
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        
+        if numeric_cols:
+            # We take the latest (right-most) numeric column
+            target_col = numeric_cols[-1]
+            final_df = df[['date', target_col]].copy()
             final_df.columns = ['date', var_name]
             
+            # 5. Filter out impossible values (like the date-integers we saw)
+            # Growth rates and unemployment are rarely > 100 or < -100
+            final_df = final_df[final_df[var_name].abs() < 1000]
+
             try:
-                # Convert to PeriodIndex for pyfrbus compatibility
                 final_df['date'] = pd.PeriodIndex(final_df['date'], freq='Q')
                 save_path = os.path.join(output_dir, f"{var_name.lower()}.csv")
                 final_df.set_index('date').sort_index().to_csv(save_path)
-                print(f"   ✅ Saved {var_name} with {len(final_df)} observations")
+                print(f"   ✅ Saved {var_name} ({len(final_df)} obs) - Sample: {final_df[var_name].iloc[-1]}")
             except Exception as e:
-                print(f"   ❌ Date conversion error in {sheet}: {e}")
+                print(f"   ❌ Formatting error: {e}")
 
     print(f"🏁 Finished. Found {len(os.listdir(output_dir))} variables.")
 
