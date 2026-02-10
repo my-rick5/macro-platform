@@ -18,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Injection with "Safety Margin" Scaling
+    # 🚀 THE ZERO-VARIANCE FIX: Mute dummies to prevent identity crossovers
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -27,41 +27,32 @@ def run_pro_engine():
             missing_vars = [v for v in expected_vars if v not in actual_data_cols]
             
             if missing_vars:
-                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
-                t = np.arange(len(df))
-                new_data = {}
-                for i, var in enumerate(missing_vars):
-                    # Use very small fractions (0.0001) to ensure dummy components 
-                    # never overwhelm the real macro aggregates in the model's identities.
-                    growth_rate = 1.001 + ((i % 11) * 0.0001)
-                    base_level = 0.01 + (i * 0.00001)
-                    new_data[var] = base_level * (growth_rate ** t)
-                
-                df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
+                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} zero-variance dummies...")
+                # Assign a constant tiny value to all 397 dummies. 
+                # This ensures they cannot 'grow' into a subtraction conflict.
+                for var in missing_vars:
+                    df[var] = 0.0001
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Structural Stability Floor
+    # 2. Aggressive Real Data Floor
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    # 🚀 THE FIX: Use a tiny epsilon instead of a massive floor. 
-    # High floors (100+) can cause the solver to over-correct and swing negative.
-    # A small positive epsilon (0.01) keeps the log-space 'tight'.
+    # Use a safe absolute value and floor for the real data components
     df = pd.concat([padding, df]).sort_index().ffill().bfill()
-    df = df.abs().clip(lower=0.01)
+    df = df.abs().clip(lower=0.1)
 
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        # We use 'lsa' (Linear Spread Approximation) if available to dampen the solver
+        # init_trac should now only have to solve for the 15 real variables
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Print the offending variable if the error provides context
         raise
 
 if __name__ == "__main__":
