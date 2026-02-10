@@ -21,25 +21,25 @@ def run_pro_engine():
     start_date = df_overlap.index.min() if not df_overlap.empty else df.index.min()
     end_date = df_overlap.index.max() if not df_overlap.empty else df.index.max()
 
-    # 3. Initialize Model and DYNAMICALLY Inject Missing Data
+    # 3. Initialize Model and Safely Inspect Variables
     try:
         model = frbus.Frbus("/home/spark/models/model.xml")
         print("🏗️  Model XML Loaded Successfully.")
         
-        # Get list of variables the model expects
-        expected_vars = model.varnames
+        # Correct way to get variable names in pyfrbus
+        expected_vars = list(model.lookup.keys()) 
         missing_vars = [v for v in expected_vars if v not in df.columns]
         
         if missing_vars:
-            print(f"⚠️  Injecting {len(missing_vars)} missing variables with defaults...")
+            print(f"⚠️  Injecting {len(missing_vars)} missing variables...")
             for var in missing_vars:
-                # Basic logic: Policy targets usually 2-4, residuals usually 0
+                # Targeted defaults for policy variables
                 if 'dmpt' in var:
-                    df[var] = 2.0  # Target defaults
+                    df[var] = 2.0  # Inflation/Unemp targets
                 elif 'delrff' in var:
-                    df[var] = 3.0  # Interest rate default
+                    df[var] = 3.0  # Fed Funds Rate
                 else:
-                    df[var] = 0.0  # Neutral default for everything else
+                    df[var] = 0.0  # Zero out residuals/others
         
         # 4. Final Data Clean-up
         df = df.ffill().bfill().fillna(0.0)
@@ -48,9 +48,9 @@ def run_pro_engine():
         print(f"Total Shape: {df.shape}")
         print(f"Timeline: {start_date} to {end_date}")
         
-        # 5. The Solve (Calculating Residuals)
+        # 5. Solve for Residuals
         results = model.init_trac(start_date, end_date, df)
-        print("✅ Engine Solve Successful. Residuals calculated.")
+        print("✅ Engine Solve Successful.")
         
         os.makedirs("/home/spark/results", exist_ok=True)
         results.to_csv("/home/spark/results/residuals.csv")
