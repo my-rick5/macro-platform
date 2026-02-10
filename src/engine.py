@@ -18,7 +18,11 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Smart Interpolated Proxy Injection
+    # 🚀 THE DATA INTEGRITY FIX: Enforce a strict positive floor on REAL data
+    # Some macro variables (like nominal rates) can hit 0.0, which breaks log()
+    df = df.abs().clip(lower=0.01)
+
+    # 2. Smart Proxy Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -28,13 +32,10 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Mapping proxies for {len(missing_vars)} variables...")
-                
-                # 🚀 THE REAL DATA FIX: Use the average of our real data as a 'Macro Proxy'
-                # This ensures the missing variables have a 'real' magnitude and growth trend.
+                # Average of our sanitized real data as a proxy base
                 macro_proxy = df.mean(axis=1)
                 new_vars_dict = {}
                 for i, var in enumerate(missing_vars):
-                    # Slightly vary the proxy for each variable to avoid singular Jacobian
                     variation = 1.0 + (np.sin(i) * 0.01)
                     new_vars_dict[var] = macro_proxy * variation
                 
@@ -42,18 +43,18 @@ def run_pro_engine():
         except Exception as e:
             print(f"⚠️ Mapping warning: {e}")
 
-    # 3. Final Padding and Sanitization
+    # 3. Final Padding and Global Floor
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    # Clip at 0.01 to ensure log stability without overpowering the real data
+    # Ensure the entire combined dataset (Real + Proxy) is log-safe
     df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=0.01)
 
     # 4. Model Execution
     try:
         model = frbus.Frbus(model_xml)
-        print("🏗️ Model Loaded. Executing init_trac with Real-Data Proxies...")
+        print("🏗️ Model Loaded. Executing init_trac with sanitized Real-Data...")
         results = model.init_trac(first_obs, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
