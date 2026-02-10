@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import re
 import sys
+import json
 import numpy as np
 from pyfrbus import frbus, exceptions
 
@@ -9,9 +10,10 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
+    state_file = "/home/spark/models/solver_state.json" # Persisted state
     os.makedirs(results_dir, exist_ok=True)
     
-    # 1. Load Data and Capture Target Columns
+    # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
     df = pd.concat([pd.read_csv(os.path.join(data_path, f)).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') for f in files], axis=1).sort_index()
@@ -24,16 +26,20 @@ def run_pro_engine():
     solve_start = pd.Period('2006Q1', freq='Q')
     solve_end = df.index.max()
 
-    # 3. 🚀 MERGED SPLIT-MAGNITUDE LOOP
+    # 3. 🚀 LOAD EXISTING STATE (IF ANY)
+    missing_registry = {}
+    if os.path.exists(state_file):
+        print(f"💾 Found saved state. Loading winning parameters...")
+        with open(state_file, 'r') as f:
+            missing_registry = json.load(f)
+
+    # 4. THE SELF-HEALING LOOP
     max_retries = 800
     attempts = 0
-    missing_registry = {} 
-    
-    print(f"🏗️ Model Loaded. Entering Merged Stabilization Loop...")
+    print(f"🏗️ Model Loaded. Entering Persistent State Loop...")
 
     while attempts < max_retries:
         try:
-            # Vectorized assembly to prevent fragmentation
             if missing_registry:
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
@@ -47,27 +53,23 @@ def run_pro_engine():
                                           freq='Q')
                 current_df = current_df.reindex(new_idx).ffill().bfill()
 
-            # Attempt tracking solve
             results = model.init_trac(solve_start, solve_end, current_df)
             
-            # 🎯 SUCCESS: PERFORM SURGICAL EXPORT
-            print(f"✅ Success at Cycle {attempts}. Filtering output...")
-            final_cols = []
-            for v in target_variables:
-                if v in results.columns: final_cols.append(v)
-                res_v = f"{v}_res"
-                if res_v in results.columns: final_cols.append(res_v)
-            
-            # Export the lightweight file
+            # 🎯 SUCCESS: SAVE THE WINNING STATE
+            print(f"✅ Solve Successful. Saving state to {state_file}...")
+            with open(state_file, 'w') as f:
+                json.dump(missing_registry, f)
+
+            # Surgical Export
+            final_cols = [v for v in target_variables if v in results.columns]
+            final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
             results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
-            print("📦 Exported residuals_lite.csv.")
             return 
 
         except exceptions.MissingDataError as e:
             match = re.search(r'`([^`]+)`', str(e))
             if match:
                 var = match.group(1).lower()
-                # Initialize based on variable type to avoid log errors
                 if any(x in var for x in ['r', 'pi', 'u', 'gap', 'del']):
                     missing_registry[var] = 0.05 
                 else:
@@ -76,15 +78,9 @@ def run_pro_engine():
             else: raise e
             
         except (ValueError, exceptions.ComputationError):
-            # Apply unique prime scaling to break identities like (X - Y = 0)
             multiplier = 1.0013 + (attempts * 0.0001)
             missing_registry = {k: v * multiplier for k, v in missing_registry.items()}
             attempts += 1
-            if attempts % 50 == 0:
-                print(f"🔄 Scaling Cycle {attempts}...")
 
-    print("❌ CRITICAL: Failed to find stable mathematical domain.")
+    print("❌ Failed to stabilize.")
     sys.exit(1)
-
-if __name__ == "__main__":
-    run_pro_engine()
