@@ -15,8 +15,9 @@ def check_hardware_readiness():
 def run_pro_engine():
     check_hardware_readiness()
 
-    start_date = "2015Q1"
-    end_date = "2025Q3"
+    start_date = df.index[0]
+    end_date = df.index[-1]
+    print(f"📅 Data range detected: {start_date} to {end_date}")
     
     print("🚀 Initializing FRB/US Structural Engine...")
     df = load_data("/home/spark/data/y_unemp.csv") 
@@ -33,9 +34,11 @@ def run_pro_engine():
     missing_vars = [v for v in required_vars if v not in df.columns]
 
     if missing_vars:
-        print(f"⚠️  Filling {len(missing_vars)} missing variables with 0.0 (e.g., {missing_vars[:5]}...)")
-        for var in missing_vars:
-            df[var] = 0.0
+        print(f"⚠️  Filling {len(missing_vars)} missing variables...")
+        # Create a temporary dataframe of zeros for all missing variables at once
+        missing_df = pd.DataFrame(0.0, index=df.index, columns=missing_vars)
+        # Join them in one go to prevent fragmentation
+        df = pd.concat([df, missing_df], axis=1)
     # -----------------------------------    
 
     print("⚖️  Solving for Tracking Residuals (e)...")
