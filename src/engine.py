@@ -8,7 +8,7 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
-    os.makedirs(results_dir, exist_index=True)
+    os.makedirs(results_dir, exist_ok=True)    
     
     # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
