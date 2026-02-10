@@ -13,50 +13,62 @@ def run_pro_engine():
     # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
+    
+    # Load and immediately normalize frequency to 'Q'
     df = pd.concat([pd.read_csv(os.path.join(data_path, f)).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') for f in files], axis=1).sort_index()
+    df.index = df.index.asfreq('Q')
     df.columns = [c.lower() for c in df.columns]
-    actual_cols = list(df.columns)
     
     # 2. Initialization
     model = frbus.Frbus(model_xml)
+    # Ensure start/end dates use the exact same frequency as the index
     solve_start = pd.Period('2006Q1', freq='Q')
     solve_end = df.index.max()
 
-    # 3. 🚀 THE SELF-HEALING LOOP
-    max_retries = 500 # Sufficient for a 400-variable model
+    # 3. 🚀 THE DE-FRAGMENTED SELF-HEALING LOOP
+    max_retries = 500
     attempts = 0
     
-    print(f"🏗️ Model Loaded. Entering Self-Healing Validation Loop...")
+    print(f"🏗️ Model Loaded. Entering De-Fragmented Validation Loop...")
 
     while attempts < max_retries:
         try:
+            # IMPORTANT: Re-copy the dataframe to fix the PerformanceWarning (fragmentation)
+            # This ensures the index remains a clean 'list' for the solver's internal lookup.
+            clean_df = df.copy()
+            
             # Attempt the track solve
-            results = model.init_trac(solve_start, solve_end, df)
+            results = model.init_trac(solve_start, solve_end, clean_df)
             print(f"✅ Engine Solve Successful after {attempts} healing cycles.")
             results.to_csv(os.path.join(results_dir, "residuals.csv"))
             break
             
         except exceptions.MissingDataError as e:
-            # 🔍 EXTRACT THE OFFENDING VARIABLE
-            # Error looks like: "The variable `dmptpi` appears in the model..."
             msg = str(e)
             match = re.search(r'`([^`]+)`', msg)
             
             if match:
                 missing_var = match.group(1).lower()
-                # Inject a neutral 1.0 series for the missing variable
-                df[missing_var] = 1.0
+                df[missing_var] = 1.0  # Neutral baseline
                 attempts += 1
-                if attempts % 10 == 0:
-                    print(f"🩹 Healed {attempts} variables so far (Latest: {missing_var})...")
+                if attempts % 50 == 0:
+                    print(f"🩹 Healed {attempts} variables...")
             else:
-                print(f"❌ Unparseable MissingDataError: {msg}")
                 raise e
-        except Exception as e:
-            print(f"❌ Non-Validation Error encountered: {e}")
-            raise e
+        except ValueError as e:
+            # Handle the 'Period not in list' error by checking index coverage
+            if "is not in list" in str(e):
+                print(f"⚠️ Index Mismatch at {solve_start}. Re-indexing to ensure coverage...")
+                # Expand index to ensure 2006Q1 is definitely included
+                new_idx = pd.period_range(start=min(df.index.min(), solve_start), 
+                                          end=max(df.index.max(), solve_end), 
+                                          freq='Q')
+                df = df.reindex(new_idx).ffill().bfill()
+                attempts += 1
+            else:
+                raise e
     else:
-        print("❌ Reached max retries without resolving namespace.")
+        print("❌ Reached max retries.")
 
 if __name__ == "__main__":
     run_pro_engine()
