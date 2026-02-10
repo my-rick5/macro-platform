@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Stochastic Jitter Engine Started.")
+print("💓 Heartbeat: Degrees of Freedom Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -48,25 +48,31 @@ def run_pro_engine():
     missing_registry = {}
     gdp_anchor = df['gngdp'].iloc[0] if 'gngdp' in df.columns else 5500
 
-    # 🎯 FIX: STOCHASTIC JITTER INJECTION
+    # 🎯 FIX: ENDOGENOUS RELEASE (DEGREES OF FREEDOM)
     def get_identity_locked_proxy(var_name):
+        # 1. Price Indices: Seed these to anchor inflation
         if var_name.startswith('p') and not any(x in var_name for x in ['pi', 'ptr']):
             base_val = 1.0 
+            
+        # 2. REAL QUANTITIES: DO NOT SEED
+        # We let the solver calculate them endogenously from nominal data
         elif var_name.startswith('q'):
-            base_val = gdp_anchor * 0.15 
+            return None 
+            
+        # 3. Rates & Gaps
         elif any(x in var_name for x in ['r','pi','u','gap','adj','exp']):
             base_val = 0.05
+        # 4. Capital Stocks
         elif var_name.startswith('k'):
             base_val = gdp_anchor * 3.1
         else:
             base_val = 0.20
             
-        # 🎲 Add 0.01% random noise to prevent "Zero-Delta" singular matrices
         jitter = 1 + (np.random.uniform(-0.0001, 0.0001))
         return base_val * jitter
 
     # 3. Safe Anchor Loop
-    print(f"⚡ Establishing stochastic anchor at {first_actual}...")
+    print(f"⚡ Establishing anchor with released quantities at {first_actual}...")
     init_passed = False
     attempts = 0
     while not init_passed and attempts < 250:
@@ -82,7 +88,9 @@ def run_pro_engine():
             match = re.search(r'`([^`]+)`', str(e))
             if match:
                 var = match.group(1).lower()
-                df[var] = get_identity_locked_proxy(var)
+                proxy_val = get_identity_locked_proxy(var)
+                if proxy_val is not None:
+                    df[var] = proxy_val
                 attempts += 1
             else: 
                 attempts += 1
@@ -108,7 +116,9 @@ def run_pro_engine():
                 if match:
                     var = match.group(1).lower()
                     print(f"🛠️  Identity Lock: Seeding {var}...")
-                    missing_registry[var] = get_identity_locked_proxy(var)
+                    proxy_val = get_identity_locked_proxy(var)
+                    if proxy_val is not None:
+                        missing_registry[var] = proxy_val
                     window_attempts += 1
                 else: window_attempts += 1
 
@@ -118,7 +128,7 @@ def run_pro_engine():
         current_solve_start += 4
             
     # 5. Final Export
-    print(f"🔥 Exporting stochastic stabilized residuals...")
+    print(f"🔥 Exporting identity-consistent residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data, **solver_params)
     results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
