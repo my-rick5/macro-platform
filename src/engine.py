@@ -21,8 +21,9 @@ def run_pro_engine():
         data_frames.append(tmp.set_index('date'))
     
     df = pd.concat(data_frames, axis=1).sort_index()
+    actual_data_cols = list(df.columns)
 
-    # 2. XML Scraper: Targeted Injection
+    # 2. XML Scraper: Targeted Dummy Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -33,48 +34,53 @@ def run_pro_engine():
             missing_vars = [v for v in expected_vars if v not in df.columns]
             
             if missing_vars:
-                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
+                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Set a safe steady-state baseline
-                    # Rates at 0.05, Levels at 1.0 (Unit)
-                    base = 0.05 if any(r in var for r in ['mpt', 'lur', 'pi', 'r']) else 1.0
-                    # Tiny unique offset to prevent identity collisions
-                    new_data[var] = [base + (i * 1e-8)] * len(df)
+                    # Use a very stable baseline. 
+                    # Adding a tiny epsilon to ensure no two dummies are exactly identical.
+                    new_data[var] = [1.0 + (i * 1e-9)] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Padding & Numerical Robustness
+    # 3. Padding & Cleaning
     df = df.sort_index()
     start_date = df.index.min()
-    padding_dates = [start_date - i for i in range(1, 13)] # 3 years of buffer
+    padding_dates = [start_date - i for i in range(1, 13)]
     padding_df = pd.DataFrame(index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
     
     for col in df.columns:
         padding_df[col] = df[col].iloc[0]
 
     df = pd.concat([padding_df, df]).sort_index()
-    
-    # CRITICAL: Apply a strictly positive floor to prevent log(negative)
-    # 0.01 is a safe lower bound for macro data in this engine
-    df = df.ffill().bfill().clip(lower=0.01).copy()
+    # High floor to ensure no accidental log(0) during solver jumps
+    df = df.ffill().bfill().clip(lower=0.1).copy()
 
-    # Save verification for artifact inspection
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
 
-    # 4. Engine Solve
+    # 4. Engine Solve with Selective Tracking
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        # Solve from actual start_date
+        
+        # We run the tracking. If it hits a log error on a dummy variable, 
+        # it usually means an identity is failing.
         results = model.init_trac(start_date, df.index.max(), df)
         
+        # FILTER: Only keep residuals for variables we actually have data for
+        # This prevents the final output from being cluttered with dummy residuals
+        final_results = results[[c for c in results.columns if any(x in c for x in actual_data_cols)]]
+        
         print("✅ Engine Solve Successful.")
-        results.to_csv(os.path.join(results_dir, "residuals.csv"))
+        final_results.to_csv(os.path.join(results_dir, "residuals.csv"))
+        
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # Identify the first column that has a zero or tiny value
+        culprit = df.columns[(df.iloc[0] < 0.11)].tolist()[:5]
+        print(f"🔍 Potential culprit variables (near floor): {culprit}")
         raise
 
 if __name__ == "__main__":
