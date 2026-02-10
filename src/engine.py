@@ -12,7 +12,10 @@ def run_pro_engine():
     
     # 1. Load and Align Real Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
-    if not files: return
+    if not files:
+        print("⚠️ No processed data files found.")
+        return
+        
     data_frames = [pd.read_csv(os.path.join(data_path, f)).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') for f in files]
     df = pd.concat(data_frames, axis=1).sort_index()
     df.columns = [c.lower() for c in df.columns]
@@ -30,10 +33,10 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} stable dummies...")
                 t = np.arange(len(df))
                 new_data = {}
-                rng = np.random.default_rng(317) # Updated seed for Build #317
+                rng = np.random.default_rng(319) # Seeded for Build #319
                 
                 for var in missing_vars:
-                    # High base level to overwhelm subtraction identities
+                    # Maintain high base level to prevent identities from flipping negative
                     base_level = 100.0 + rng.uniform(0, 50)
                     # Unique tiny growth to ensure log-differences are non-zero
                     growth = 1.0001 + rng.uniform(0, 0.0001)
@@ -46,31 +49,39 @@ def run_pro_engine():
     # 3. Final Data Sanitization & Padding
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
-    for col in df.columns: padding[col] = df[col].iloc[0]
+    for col in df.columns: 
+        padding[col] = df[col].iloc[0]
     
-    # Strictly enforce positivity and a high floor for log-safety
+    # Ensure strict positivity for log-space safety
     df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=10.0)
 
-    # 4. Model Loading & Jacobian Configuration
+    # 4. Model Loading & Solver Execution
     try:
         model = frbus.Frbus(model_xml)
-        print("🏗️ Model Loaded. Configuring Solver Jacobian...")
+        print("🏗️ Model Loaded. Configuring Solver via init_trac parameters...")
         
-        # 🚀 JACOBIAN PRECISION PATCH: 
-        # Configure the solver to prevent Newton overshooting into negative log-space
-        model.solver_opts({
-            'eps': 1e-6,           # Increased perturbation step for high-scale data
+        # JACOBIAN & STABILITY SETTINGS:
+        # We pass these as solver_opts to handle the Newton solver's behavior
+        solver_settings = {
+            'eps': 1e-6,           # Perturbation step size for 100+ scale data
             'tol': 1e-7,           # Tight convergence tolerance
-            'maxit': 100,          # Allow headroom for complex dummy identities
-            'linesearch': True,    # CRITICAL: Dampens steps to keep arguments positive
-            'method': 'newton'     # Use standard damped Newton
-        })
+            'maxit': 100,          # Headroom for complex identities
+            'linesearch': True,    # PREVENTS: invalid value encountered in log
+            'method': 'newton'
+        }
 
         print("🧮 Calculating Residuals with Damped Newton...")
-        results = model.init_trac(first_obs, df.index.max(), df)
+        # API FIX: solver_opts is passed directly into the init_trac call
+        results = model.init_trac(
+            first_obs, 
+            df.index.max(), 
+            df, 
+            solver_opts=solver_settings
+        )
+        
         print("✅ Engine Solve Successful.")
         
-        # Filter and save only the variables we care about
+        # 5. Filter and save output
         output_cols = [c for c in results.columns if c.lower() in actual_data_cols]
         results[output_cols].to_csv(os.path.join(results_dir, "residuals.csv"))
         
