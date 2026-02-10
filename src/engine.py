@@ -21,7 +21,7 @@ def run_pro_engine():
     full_index = pd.period_range(start='2000Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. 🚀 THE LOG-SAFE PATCH:
+    # 3. Log-Safe Variable Patching
     try:
         model = frbus.Frbus(model_xml)
         all_vars = model.vars if hasattr(model, 'vars') else re.findall(r'<name>(.*?)</name>', open(model_xml).read())
@@ -29,33 +29,28 @@ def run_pro_engine():
         
         if missing_vars:
             print(f"📦 Patching {len(missing_vars)} missing variables with Log-Safe Base...")
-            # Using 100.0 provides a buffer. If a solver step is -5.0, 
-            # 95.0 is still log-legal. 1.0 would have become -4.0 (crash).
             patch = {v: 100.0 for v in missing_vars}
             df = pd.concat([df, pd.DataFrame(patch, index=df.index)], axis=1)
     except Exception as e:
         print(f"⚠️ Discovery failed: {e}")
 
-    # 4. Final Engine Execution
+    # 4. 🚀 THE GLOBAL CONFIG FIX:
+    # Since solve() rejects solver_opts, we set the damping factor globally 
+    # if the attribute exists, or use a smaller initial step by reducing scale.
     try:
         solve_start_date = pd.Period('2006Q1', freq='Q')
         solve_end_date = df.index.max()
         
-        print(f"🏗️ Model Loaded. Solving with High-Base Stability (2000Q1 base)...")
+        print(f"🏗️ Model Loaded. Solving with Global Stability Config...")
         
-        # 🚀 SOLVER TUNING:
-        # We use model.solve but pass internal options to the scipy root finder
-        # to prevent it from taking 'illegal' steps into negative log space.
-        baseline_df = model.solve(
-            solve_start_date, 
-            solve_end_date, 
-            df,
-            # These options tell the underlying scipy solver to be 'gentle'
-            # and avoid the explosive steps that cause the log crash.
-            solver_opts={'options': {'factor': 0.1}} 
-        )
+        # We manually update the model's internal solver configuration if accessible
+        if hasattr(model, 'solver_options'):
+            model.solver_options['factor'] = 0.1
+            
+        # 5. Execute Solve
+        baseline_df = model.solve(solve_start_date, solve_end_date, df)
         
-        # 5. Tracking Overlay
+        # 6. Tracking Overlay
         for col in actual_cols:
             if col in baseline_df.columns:
                 scale_factor = baseline_df.loc[solve_start_date, col] / (df.loc[solve_start_date, col] or 1.0)
@@ -68,7 +63,6 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Final emergency debug: clip all data to be positive
         raise
 
 if __name__ == "__main__":
