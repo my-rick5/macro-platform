@@ -15,12 +15,12 @@ def check_hardware_readiness():
 def run_pro_engine():
     check_hardware_readiness()
 
+    print("🚀 Initializing FRB/US Structural Engine...")
+    
+    df = load_data("/home/spark/data/y_unemp.csv")
     start_date = df.index[0]
     end_date = df.index[-1]
-    print(f"📅 Data range detected: {start_date} to {end_date}")
-    
-    print("🚀 Initializing FRB/US Structural Engine...")
-    df = load_data("/home/spark/data/y_unemp.csv") 
+    print(f"📅 Data range detected: {start_date} to {end_date}") 
     
     # Ensure XGAP exists
     if 'GAP' in df.columns: df['XGAP'] = df['GAP']
