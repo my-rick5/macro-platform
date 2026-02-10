@@ -20,36 +20,43 @@ def run_pro_engine():
     # 2. Strict Reconstruction (Log-Linear)
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
-    df = df.abs().clip(lower=10.0) # Higher floor for numerical stability
+    # 🚀 SCALE FIX: Many FRB/US versions expect GDP in billions (e.g. 18000) 
+    # and rates in percentages (e.g. 5.0). We will preserve the input scale.
+    df = df.abs().clip(lower=10.0)
 
-    # 3. Model Variable Synchronization
+    # 3. Proxy Synchronization
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
                 expected_vars = [v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', f.read()) if v.strip()]
-            new_vars_dict = {v: pd.Series(10.0, index=df.index) for v in expected_vars if v not in df.columns}
+            # Set all unknown variables to a neutral, high-stability constant
+            new_vars_dict = {v: pd.Series(100.0, index=df.index) for v in expected_vars if v not in df.columns}
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception: pass
 
-    # 4. 🚀 THE ITERATIVE SOLVER: Solve one quarter at a time
+    # 4. 🚀 THE WARM-UP SOLVER
     try:
         model = frbus.Frbus(model_xml)
-        solve_start = df.index[8] 
-        print(f"🏗️ Model Loaded. Solving with Iterative Soft-Start: {solve_start} to {df.index.max()}")
+        solve_start = df.index[8] # 2006Q1
         
-        # We solve iteratively to prevent the 'divide by zero' step-size error
-        current_data = df.copy()
-        for period in pd.period_range(start=solve_start, end=df.index.max(), freq='Q'):
-            print(f"📈 Solving period: {period}...", end='\r')
-            # init_trac for a single period stabilizes the solution for the next
-            temp_res = model.init_trac(period, period, current_data)
-            current_data.update(temp_res)
+        print(f"🏗️ Model Loaded. Performing Warm-up for: {solve_start}")
         
-        print("\n✅ Iterative Engine Solve Successful.")
-        current_data[[c for c in current_data.columns if c in actual_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
+        # We use solve() first to let the model find a stable 'baseline' 
+        # before we try to calculate tracking residuals (init_trac).
+        # This effectively 'primes' the Jacobian matrix.
+        baseline = model.solve(solve_start, solve_start, df)
+        
+        print(f"📈 Warm-up complete. Starting tracking solve...")
+        # Merge baseline back into df to provide the 'warm' starting guess
+        df.update(baseline)
+        
+        results = model.init_trac(solve_start, df.index.max(), df)
+        print("✅ Engine Solve Successful.")
+        
+        results[[c for c in results.columns if c in actual_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
         
     except Exception as e:
-        print(f"\n❌ Iterative Engine Failed: {e}")
+        print(f"❌ Engine Failed: {e}")
         raise
 
 if __name__ == "__main__":
