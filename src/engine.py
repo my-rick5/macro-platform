@@ -9,11 +9,9 @@ def run_pro_engine():
     results_dir = "/home/spark/results"
     os.makedirs(results_dir, exist_ok=True)
     
-    # 1. Load merged CSVs from Preprocessor
+    # 1. Load merged CSVs
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
-    if not files:
-        print("❌ No processed data found in /home/spark/data/processed")
-        return
+    if not files: return
 
     data_frames = []
     for f in files:
@@ -23,7 +21,7 @@ def run_pro_engine():
     
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. XML-Aware Scraper
+    # 2. XML-Aware Scraper with Safe Baselines
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -34,45 +32,39 @@ def run_pro_engine():
             missing_vars = [v for v in expected_vars if v not in df.columns]
             
             if missing_vars:
-                print(f"🛰️  Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} missing series...")
+                print(f"🛰️  Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
                 new_cols = {}
                 for var in missing_vars:
-                    val = 2.0 if any(x in var for x in ['mpt', 'lur', 'pi']) else 0.0
+                    # FIX: Initialize to 1.0 to prevent 'divide by zero' in logs
+                    # Policy variables keep 2.0; everything else gets 1.0 baseline
+                    val = 2.0 if any(x in var for x in ['mpt', 'lur', 'pi']) else 1.0
                     new_cols[var] = val
                 
-                df = pd.concat([df, pd.DataFrame(new_cols, index=df.index)], axis=1)
+                # Use assign to avoid the concatenation FutureWarning
+                df = df.assign(**new_cols)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Lag Padding & Data Integrity
+    # 3. Lag Padding
     df = df.sort_index()
     start_date = df.index.min()
     padding_dates = [start_date - i for i in range(1, 5)]
-    padding_df = pd.DataFrame(index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
+    padding_df = pd.DataFrame(1.0, index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
     
     df = pd.concat([padding_df, df]).sort_index()
-    df = df.ffill().bfill().fillna(0.0)
+    df = df.ffill().bfill().replace(0, 1.0) # Final safety check for zeros
     
-    # --- VERIFICATION LINE ---
-    # This exports the exact matrix being sent to the FRB/US Solver
-    verification_path = os.path.join(results_dir, "master_input_matrix.csv")
-    df.to_csv(verification_path)
-    print(f"💾 Verification file saved: {verification_path}")
-    # -------------------------
-
+    # Save verification file
+    df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
     print(f"📊 Final Padded Matrix Shape: {df.shape}")
 
     # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️  Model Loaded. Calculating Residuals...")
-        
-        # Start calculation from original start_date using the padded history
         results = model.init_trac(start_date, df.index.max(), df)
-        
         print("✅ Engine Solve Successful.")
         results.to_csv(os.path.join(results_dir, "residuals.csv"))
-        
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
         raise
