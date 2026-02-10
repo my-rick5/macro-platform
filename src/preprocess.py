@@ -1,59 +1,96 @@
 import pandas as pd
+import psutil
+import glob
 import os
-import re
+import sys
+from pyfrbus.frbus import Frbus
 
-def clean_fed_excel(excel_path, output_dir):
-    os.makedirs(output_dir, exist_ok=True)
-    xls = pd.ExcelFile(excel_path)
+def check_hardware():
+    mem = psutil.virtual_memory()
+    available_gb = mem.available / (1024 ** 3)
+    print(f"🖥️  Hardware Check: {available_gb:.2f} GB RAM available.")
+    if available_gb < 2.0:
+        print("❌ ERROR: Insufficient Memory for FRB/US solve.")
+        sys.exit(1)
+
+def load_and_merge_data(processed_dir):
+    """
+    Collects all individual variable CSVs from the preprocessor 
+    and merges them into a single Master Matrix.
+    """
+    all_files = glob.glob(os.path.join(processed_dir, "*.csv"))
+    if not all_files:
+        raise FileNotFoundError(f"🔍 No processed CSVs found in {processed_dir}. Ensure preprocess.py ran successfully.")
+
+    print(f"📂 Found {len(all_files)} variable files. Merging...")
+    df_list = []
     
-    skip_list = ['documentation', 'notes', 'summary', 'definitions']
+    for f in all_files:
+        var_name = os.path.basename(f).replace('.csv', '').upper()
+        temp_df = pd.read_csv(f, index_col=0)
+        temp_df.index = pd.PeriodIndex(temp_df.index, freq='Q')
+        df_list.append(temp_df)
     
-    for sheet in xls.sheet_names:
-        if sheet.lower() in skip_list:
-            continue
-            
-        # 1. Read WITHOUT a header initially to find where the dates are
-        df = pd.read_excel(xls, sheet_name=sheet, header=None)
-        
-        # 2. Find the row that contains the quarterly dates (e.g., '2024Q1')
-        date_row_index = None
-        for i, row in df.iterrows():
-            if row.astype(str).str.contains(r'\d{4}Q\d').any():
-                date_row_index = i
-                break
-        
-        if date_row_index is None:
-            print(f"❌ No date row found in {sheet}. Skipping.")
-            continue
+    master_df = pd.concat(df_list, axis=1)
 
-        # 3. Re-read the sheet starting from that date row
-        df = pd.read_excel(xls, sheet_name=sheet, skiprows=date_row_index)
-        
-        # 4. Clean column names
-        df.columns = [str(c).strip().replace(':', '') for c in df.columns]
-        date_cols = [c for c in df.columns if re.search(r'\d{4}Q\d', c)]
-        
-        if not date_cols:
-            print(f"❌ Failed second-pass column detection in {sheet}.")
-            continue
+    # --- VERIFICATION PRINT STEP ---
+    print("\n📊 --- MASTER DATA MATRIX VERIFICATION ---")
+    print(f"Total Dimensions: {master_df.shape[0]} Quarters x {master_df.shape[1]} Variables")
+    print(f"Variables Found: {', '.join(list(master_df.columns))}")
+    print(f"Date Range: {master_df.index[0]} to {master_df.index[-1]}")
+    print("\nFirst 3 rows of data:")
+    print(master_df.head(3))
+    print("-------------------------------------------\n")
+    
+    return master_df
 
-        print(f"⚡ Found data in {sheet}. Processing latest release...")
-        
-        # 5. Extract latest release (last row)
-        latest_data = df.iloc[-1][date_cols]
-        
-        # 6. Model specific renaming
-        final_df = pd.DataFrame(latest_data).reset_index()
-        final_df.columns = ['date', sheet]
-        if sheet == 'UNEMP': final_df.columns = ['date', 'LUR']
+def run_pro_engine():
+    check_hardware()
+    
+    # 1. Load and verify the merged data
+    processed_path = "/home/spark/data/processed"
+    try:
+        df = load_and_merge_data(processed_path)
+    except Exception as e:
+        print(f"❌ Data Load Error: {e}")
+        sys.exit(1)
+    
+    start_date = df.index[0]
+    end_date = df.index[-1]
 
-        # 7. Final Formatting
-        final_df['date'] = pd.PeriodIndex(final_df['date'], freq='Q')
-        final_df = final_df.set_index('date')
-        
-        final_df.to_csv(os.path.join(output_dir, f"{sheet.lower()}.csv"))
+    # 2. Model Setup
+    print(f"🏗️  Loading FRB/US Model XML...")
+    model = Frbus("/home/spark/models/model.xml")
 
-    print(f"✅ Preprocessing complete.")
+    # 3. Auto-Fill for Stability (The 'Whac-A-Mole' fix)
+    required_vars = set(model.endo_names) | set(model.exo_names)
+    missing_vars = [v for v in required_vars if v not in df.columns]
+    
+    if missing_vars:
+        print(f"⚠️  {len(missing_vars)} variables missing from Fed data. Filling with 0.0 for stability.")
+        zero_df = pd.DataFrame(0.0, index=df.index, columns=missing_vars)
+        df = pd.concat([df, zero_df], axis=1)
+
+    # 4. Solve for Judgment (init_trac)
+    print(f"⚖️  Solving for Tracking Residuals ({start_date} to {end_date})...")
+    try:
+        results = model.init_trac(start_date, end_date, df)
+        
+        # 5. Run Final Simulation
+        print("🚀 Running Forecast Simulation...")
+        output = model.solve(start_date, end_date, results)
+        
+        # 6. Export Results
+        os.makedirs("/home/spark/results", exist_ok=True)
+        results.to_csv("/home/spark/results/final_judgment_report.csv")
+        output.to_csv("/home/spark/results/final_simulation_forecast.csv")
+        
+        print("\n✅ Build Successful.")
+        print(f"📝 Reports generated: judgment_report.csv, simulation_forecast.csv")
+        
+    except Exception as e:
+        print(f"❌ Engine Solve Error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    clean_fed_excel('/home/spark/data/library.xlsx', '/home/spark/data/processed')
+    run_pro_engine()
