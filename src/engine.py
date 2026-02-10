@@ -22,7 +22,7 @@ def run_pro_engine():
     
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. XML Scraper with "Safe Equilibrium" Injection
+    # 2. XML Scraper: Targeted Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -34,23 +34,22 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
-                
-                # NEW STRATEGY: Use 1.0 (Unit) for all injected variables but 
-                # ensure they are slightly decoupled to satisfy identities.
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # 1.0 is the most stable log-base. We add a tiny offset per variable.
-                    val = 1.0 + (i * 1e-7)
-                    new_data[var] = [val] * len(df)
+                    # Set a safe steady-state baseline
+                    # Rates at 0.05, Levels at 1.0 (Unit)
+                    base = 0.05 if any(r in var for r in ['mpt', 'lur', 'pi', 'r']) else 1.0
+                    # Tiny unique offset to prevent identity collisions
+                    new_data[var] = [base + (i * 1e-8)] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Padding & Smoothing
+    # 3. Padding & Numerical Robustness
     df = df.sort_index()
     start_date = df.index.min()
-    padding_dates = [start_date - i for i in range(1, 13)]
+    padding_dates = [start_date - i for i in range(1, 13)] # 3 years of buffer
     padding_df = pd.DataFrame(index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
     
     for col in df.columns:
@@ -58,27 +57,24 @@ def run_pro_engine():
 
     df = pd.concat([padding_df, df]).sort_index()
     
-    # Increase the floor to 0.1 to keep logs away from the steep slope near zero
-    df = df.ffill().bfill().clip(lower=0.1).copy()
+    # CRITICAL: Apply a strictly positive floor to prevent log(negative)
+    # 0.01 is a safe lower bound for macro data in this engine
+    df = df.ffill().bfill().clip(lower=0.01).copy()
 
+    # Save verification for artifact inspection
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
 
-    # 4. Engine Solve with Solver Relaxation
+    # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        
-        # We allow the solver to be more "lax" with the initial guess 
-        # to prevent it from blowing up on the dummy data.
+        # Solve from actual start_date
         results = model.init_trac(start_date, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
         results.to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # One last check: Are any of our actual data points causing the issue?
-        print("🔍 Checking Real Data Range:")
-        print(df.iloc[:, :15].describe().loc[['min', 'max']])
         raise
 
 if __name__ == "__main__":
