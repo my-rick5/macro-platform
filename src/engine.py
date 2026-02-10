@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Inventory Float Engine Started.")
+print("💓 Heartbeat: Temporal Compression Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -46,27 +46,23 @@ def run_pro_engine():
     missing_registry = {}
     gdp_anchor = df['gngdp'].iloc[0] if 'gngdp' in df.columns else 5500
 
-    # 🎯 FIX: INVENTORY FLOAT (BALANCING ITEM)
     def get_identity_locked_proxy(var_name):
-        # 🛡️ Let Inventory float to satisfy the GDP identity
         if any(x in var_name for x in ['ki', 'ein', 'li']):
             return None 
-            
         if var_name.startswith('p') and not any(x in var_name for x in ['pi', 'ptr']):
             base_val = 1.0 
         elif var_name.startswith('q'):
-            return None # Endogenous release for real quantities
+            return None 
         elif any(x in var_name for x in ['r','pi','u','gap','adj','exp']):
             base_val = 0.05
         elif var_name.startswith('k'):
             base_val = gdp_anchor * 3.1
         else:
             base_val = 0.20
-            
         jitter = 1 + (np.random.uniform(-0.0001, 0.0001))
         return base_val * jitter
 
-    # (3. Anchor Logic remains same as previous safe-start)
+    # 3. Anchor logic (Safe Start)
     print(f"⚡ Establishing anchor at {first_actual}...")
     init_passed = False
     attempts = 0
@@ -88,11 +84,16 @@ def run_pro_engine():
                 attempts += 1
             else: attempts += 1
 
-    # 4. Global Recursive Shield with Inventory Float
+    # 🎯 4. GLOBAL RECURSIVE SHIELD (TEMPORAL COMPRESSION)
     current_solve_start = first_actual + 1
     while current_solve_start <= full_end:
-        current_solve_end = min(current_solve_start + 3, full_end)
-        print(f"🕒 Window: {current_solve_start} to {current_solve_end}")
+        # 🔬 DANGER ZONE STEP: Solve 1 quarter at a time until 1991Q1
+        if current_solve_start < pd.Period('1991Q1', freq='Q'):
+            current_solve_end = current_solve_start
+            print(f"🔬 Danger Zone Step: {current_solve_start}")
+        else:
+            current_solve_end = min(current_solve_start + 3, full_end)
+            print(f"🕒 Standard Window: {current_solve_start} to {current_solve_end}")
         
         window_passed = False
         window_attempts = 0
@@ -100,7 +101,8 @@ def run_pro_engine():
             try:
                 current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                 
-                if current_solve_start == first_actual + 1:
+                # Apply Warm-Start Damping for the first year
+                if current_solve_start < pd.Period('1991Q1', freq='Q'):
                     for var in missing_registry:
                         current_df.loc[current_solve_start:current_solve_end, var] = missing_registry[var]
 
@@ -113,7 +115,6 @@ def run_pro_engine():
                 match = re.search(r'`([^`]+)`', str(e))
                 if match:
                     var = match.group(1).lower()
-                    print(f"🛠️  Inventory Float Check: Seeding {var}...")
                     proxy_val = get_identity_locked_proxy(var)
                     if proxy_val is not None: missing_registry[var] = proxy_val
                     window_attempts += 1
@@ -122,9 +123,14 @@ def run_pro_engine():
         if not window_passed:
             print(f"❌ Structural fail at window {current_solve_start}.")
             sys.exit(1)
-        current_solve_start += 4
+        
+        # Advance by 1 quarter in danger zone, or 4 quarters in standard mode
+        if current_solve_start < pd.Period('1991Q1', freq='Q'):
+            current_solve_start += 1
+        else:
+            current_solve_start += 4
             
-    print("🔥 Exporting residuals...")
+    print("🔥 Exporting stabilized residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data, **solver_params)
     results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
