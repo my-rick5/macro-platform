@@ -21,7 +21,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Inject Stable Dummies with Randomized Slopes
+    # 2. Inject Stable Dummies (397 variables)
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -33,12 +33,10 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} stable dummies...")
                 t = np.arange(len(df))
                 new_data = {}
-                rng = np.random.default_rng(319) # Seeded for Build #319
+                rng = np.random.default_rng(320) # Updated for Build #320
                 
                 for var in missing_vars:
-                    # Maintain high base level to prevent identities from flipping negative
                     base_level = 100.0 + rng.uniform(0, 50)
-                    # Unique tiny growth to ensure log-differences are non-zero
                     growth = 1.0001 + rng.uniform(0, 0.0001)
                     new_data[var] = base_level * (growth ** t)
                 
@@ -46,42 +44,31 @@ def run_pro_engine():
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Final Data Sanitization & Padding
+    # 3. Final Sanitization
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
-    for col in df.columns: 
-        padding[col] = df[col].iloc[0]
-    
-    # Ensure strict positivity for log-space safety
+    for col in df.columns: padding[col] = df[col].iloc[0]
     df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=10.0)
 
-    # 4. Model Loading & Solver Execution
+    # 4. Model Loading & Flattened Solver Execution
     try:
         model = frbus.Frbus(model_xml)
-        print("🏗️ Model Loaded. Configuring Solver via init_trac parameters...")
+        print("🏗️ Model Loaded. Executing init_trac with flattened solver options...")
         
-        # JACOBIAN & STABILITY SETTINGS:
-        # We pass these as solver_opts to handle the Newton solver's behavior
-        solver_settings = {
-            'eps': 1e-6,           # Perturbation step size for 100+ scale data
-            'tol': 1e-7,           # Tight convergence tolerance
-            'maxit': 100,          # Headroom for complex identities
-            'linesearch': True,    # PREVENTS: invalid value encountered in log
-            'method': 'newton'
-        }
-
-        print("🧮 Calculating Residuals with Damped Newton...")
-        # API FIX: solver_opts is passed directly into the init_trac call
+        # 🚀 API FIX: Pass options as direct keyword arguments to avoid TypeError
         results = model.init_trac(
             first_obs, 
             df.index.max(), 
             df, 
-            solver_opts=solver_settings
+            eps=1e-6,           # Perturbation step
+            tol=1e-7,           # Tolerance
+            maxit=100,          # Max iterations
+            linesearch=True     # Safety seatbelt for log transforms
         )
         
         print("✅ Engine Solve Successful.")
         
-        # 5. Filter and save output
+        # 5. Output filtered results
         output_cols = [c for c in results.columns if c.lower() in actual_data_cols]
         results[output_cols].to_csv(os.path.join(results_dir, "residuals.csv"))
         
