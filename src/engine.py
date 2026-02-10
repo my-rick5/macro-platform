@@ -12,16 +12,14 @@ def run_pro_engine():
     
     # 1. Load and Align Real Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
-    if not files:
-        print("⚠️ No processed data files found.")
-        return
+    if not files: return
         
     data_frames = [pd.read_csv(os.path.join(data_path, f)).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') for f in files]
     df = pd.concat(data_frames, axis=1).sort_index()
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Inject Stable Dummies (397 variables)
+    # 2. Inject Stable Dummies
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -33,7 +31,7 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} stable dummies...")
                 t = np.arange(len(df))
                 new_data = {}
-                rng = np.random.default_rng(320) # Updated for Build #320
+                rng = np.random.default_rng(322) # Updated for Build #322
                 
                 for var in missing_vars:
                     base_level = 100.0 + rng.uniform(0, 50)
@@ -50,20 +48,23 @@ def run_pro_engine():
     for col in df.columns: padding[col] = df[col].iloc[0]
     df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=10.0)
 
-    # 4. Model Loading & Flattened Solver Execution
+    # 4. Model Loading & solopt Execution
     try:
         model = frbus.Frbus(model_xml)
-        print("🏗️ Model Loaded. Executing init_trac with flattened solver options...")
+        print("🏗️ Model Loaded. Executing init_trac with solopt namespace...")
         
-        # 🚀 API FIX: Pass options as direct keyword arguments to avoid TypeError
+        # 🚀 API FIX: Pass solver options inside the 'solopt' dictionary
+        # This is the expected key for pyfrbus v1.1.0
         results = model.init_trac(
             first_obs, 
             df.index.max(), 
             df, 
-            eps=1e-6,           # Perturbation step
-            tol=1e-7,           # Tolerance
-            maxit=100,          # Max iterations
-            linesearch=True     # Safety seatbelt for log transforms
+            solopt={
+                'eps': 1e-6,        # Perturbation step
+                'tol': 1e-7,        # Tolerance
+                'maxit': 100,       # Max iterations
+                'linesearch': True  # Critical log-safety
+            }
         )
         
         print("✅ Engine Solve Successful.")
