@@ -48,12 +48,7 @@ pipeline {
                     echo "🔍 API DISCOVERY: Inspecting Model Signature..."
                     sh """
                         docker exec -e PYTHONPATH=${COMBINED_PATH} ${CONTAINER_NAME} \
-                        python3 -c "from pyfrbus.frbus import Frbus; import inspect; \
-                        print('\\n--- API SIGNATURES ---'); \
-                        print('init_trac:', inspect.signature(Frbus.init_trac)); \
-                        try: print('solve:', inspect.signature(Frbus.solve)); \
-                        except: print('solve method not found'); \
-                        print('--- END DISCOVERY ---')"
+                        python3 -c "from pyfrbus.frbus import Frbus; import inspect; print('\\n--- API SIGNATURES ---'); print('init_trac:', inspect.signature(Frbus.init_trac)); print('solve:', inspect.signature(Frbus.solve) if hasattr(Frbus, 'solve') else 'solve not found'); print('--- END DISCOVERY ---')"
                     """
 
                     echo "🚀 Running Engine..."
