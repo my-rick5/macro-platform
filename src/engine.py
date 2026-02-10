@@ -17,41 +17,45 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Deep History Expansion
+    # 2. Deep History Expansion (24-quarter buffer)
     full_index = pd.period_range(start='2000Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. 🚀 THE WARM-START FIX:
+    # 3. 🚀 THE BRUTE-FORCE INITIALIZATION:
     try:
         model = frbus.Frbus(model_xml)
-        # We load the data that comes embedded in the model itself.
-        # This is guaranteed to be mathematically consistent.
-        print("📦 Loading internal model baseline to fill gaps...")
-        master_df = model.get_init_data() # Gets the standard FRB/US baseline
         
-        # We align the internal baseline to our timeframe
-        master_df = master_df.reindex(full_index).bfill().ffill()
+        # We manually extract the required variables from the model object
+        model_vars = set()
+        if hasattr(model, 'vars'):
+            model_vars = set(v.lower() for v in model.vars)
+        else:
+            # Fallback to direct XML inspection if property is missing
+            with open(model_xml, 'r') as f:
+                model_vars = set(re.findall(r'<name>(.*?)</name>', f.read().lower()))
+
+        missing_vars = model_vars - set(df.columns)
         
-        # We overlay your 15 real variables onto the perfect baseline
-        for col in actual_cols:
-            master_df[col] = df[col]
+        if missing_vars:
+            print(f"📦 Manually initializing {len(missing_vars)} variables (including 'dmptmax')...")
+            # We use 1.0 as a neutral baseline to avoid log(0) errors
+            patch = {v: 1.0 for v in missing_vars}
+            df = pd.concat([df, pd.DataFrame(patch, index=df.index)], axis=1)
             
-        df = master_df
     except Exception as e:
-        print(f"⚠️ Warm-start failed, falling back to discovery: {e}")
-        # (Discovery logic as backup...)
+        print(f"⚠️ Metadata extraction failed: {e}")
 
     # 4. Final Engine Execution
     try:
         solve_start_date = pd.Period('2006Q1', freq='Q')
         solve_end_date = df.index.max()
-        print(f"🏗️ Model Loaded. Solving with Warm-Start Baseline...")
+        print(f"🏗️ Model Loaded. Solving with Explicit Initialization...")
 
-        # We use the most robust solver settings
+        # Since we are using 1.0, we use a very conservative damping factor
+        # to prevent the Newton solver from crashing on the first step.
         if hasattr(model, 'solver_options'):
             model.solver_options['factor'] = 0.01 
             
-        # Since the baseline is already balanced, solve() should converge instantly
         baseline_df = model.solve(solve_start_date, solve_end_date, df)
         
         # 5. Tracking Solve
