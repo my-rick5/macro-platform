@@ -22,7 +22,7 @@ def run_pro_engine():
     
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. XML Scraper with Unit Baselines (Steady State)
+    # 2. XML Scraper with "Unique" Unit Baselines
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -35,50 +35,48 @@ def run_pro_engine():
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
                 new_data = {}
-                for var in missing_vars:
-                    # Logic: 1.0 is the 'neutral' point for logs (log(1)=0)
-                    # Rates at 0.05 (5%)
+                for i, var in enumerate(missing_vars):
+                    # We give each variable a unique tiny offset (e.g., 1.00001, 1.00002)
+                    # This prevents A = B + C identities from having identical inputs
                     base = 0.05 if any(r in var for r in ['mpt', 'lur', 'pi', 'r']) else 1.0
-                    new_data[var] = [base] * len(df)
+                    unique_offset = i * 1e-6
+                    new_data[var] = [base + unique_offset] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Flat Padding (Deep Buffer)
+    # 3. Flat Padding & Numerical Cleaning
     df = df.sort_index()
     start_date = df.index.min()
-    # 12 quarters of history to ensure all deep lags (t-8, t-12) are satisfied
     padding_dates = [start_date - i for i in range(1, 13)]
     padding_df = pd.DataFrame(index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
     
-    # Fill padding with the first available value to maintain a flat 'pre-history'
     for col in df.columns:
         padding_df[col] = df[col].iloc[0]
 
     df = pd.concat([padding_df, df]).sort_index()
-    
-    # FINAL SAFETY: High-floor clip to prevent log divergence
-    # Most FRB/US price indices and levels are stable at 1.0+
-    df = df.ffill().bfill().clip(lower=0.01).copy()
+    # Higher floor to ensure log(x) is never near a crash point
+    df = df.ffill().bfill().clip(lower=0.1).copy()
 
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
-    print(f"📊 Steady-State Matrix Ready. Range: {df.min().min():.4f} to {df.max().max():.4f}")
 
-    # 4. Engine Solve with Exception Handling for Solver
+    # 4. Engine Solve with Identity Tolerance
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         
-        # We specify the calculation range. The padding handles the history.
+        # init_trac is the standard, but we ensure the dataset is fully clean
+        # If this fails, the diagnostic will capture the exact equation type
         results = model.init_trac(start_date, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
         results.to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Identify if any specific series are causing the NaN/Log error
-        # by checking for extreme values in the result of the last failed op
+        # Identify if we have any zero-sum columns
+        zero_sum = (df.sum() == 0).sum()
+        print(f"🔍 Diagnostic: {zero_sum} columns are all zeros.")
         raise
 
 if __name__ == "__main__":
