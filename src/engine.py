@@ -20,7 +20,6 @@ def run_pro_engine():
 
     # 🚀 PRIME GROWTH: Use prime factors to prevent numerical identity collapse
     t = np.arange(len(df))
-    # Starting with a distinct base for real variables
     for i, col in enumerate(actual_data_cols):
         df[col] = df[col] * (1.00127 ** t) # 127 is prime
 
@@ -38,11 +37,9 @@ def run_pro_engine():
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
-                # Using a sequence of small primes to ensure no shared growth factors
                 primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]
                 
                 for i, var in enumerate(missing_vars):
-                    # Each dummy gets a growth rate based on a unique prime oscillation
                     p = primes[i % len(primes)]
                     growth_rate = 1.005 + (p * 0.00001)
                     level_fraction = 0.01 + (i * 0.0002)
@@ -52,14 +49,13 @@ def run_pro_engine():
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Aggressive Initialization Buffer
+    # 3. Final Initialization Buffer
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    # Floor is kept at 10.0, but we add a 0.01% drift to the padding to ensure
-    # the solver doesn't start in a stagnant state during the lookback period.
     df = pd.concat([padding, df]).sort_index().ffill().bfill()
+    # Add lookback drift to grease the solver start
     for col in df.columns:
         df[col] = df[col] * (1.0001 ** np.arange(len(df)))
     df = df.clip(lower=10.0)
