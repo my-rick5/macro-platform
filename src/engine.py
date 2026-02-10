@@ -23,7 +23,7 @@ def run_pro_engine():
     df = pd.concat(data_frames, axis=1).sort_index()
     actual_data_cols = list(df.columns)
 
-    # 2. XML Scraper with Scale-Aware Injection
+    # 2. XML Scraper with Macro-Scale Defaults
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -37,27 +37,34 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Use 1000.0 for things that look like Investment/Consumption (Level variables)
-                    # Use 1.0 for Price Indices, 0.05 for Rates
-                    if any(x in var for x in ['gr', 'gc', 'gi', 'gx']): base = 1000.0
-                    elif any(r in var for r in ['mpt', 'lur', 'pi', 'r']): base = 0.05
-                    else: base = 1.0
+                    # DETERMINISTIC SCALING:
+                    # Level variables (Investment, GDP, Stock) need high values.
+                    # Rates (LUR, PI, R) and Indices (P) need low values.
+                    if any(x in var for x in ['gr', 'gc', 'gi', 'gx', 'gd', 'hgp']): 
+                        base = 2000.0 # Standard nominal scale
+                    elif any(r in var for r in ['mpt', 'lur', 'pi', 'r', 'dr']): 
+                        base = 0.05   # 5% rate
+                    else: 
+                        base = 1.0    # Price index baseline
                     
-                    new_data[var] = [base + (i * 1e-8)] * len(df)
+                    new_data[var] = [base + (i * 1e-7)] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Targeted Scaler for Potential Culprits
-    # Force GRGOVF and GRRES into a safe nominal range (e.g., 500.0)
-    # since our diagnostic showed they were crashing at 0.1.
-    for culprit in ['grgovf', 'grres']:
-        if culprit in df.columns:
-            print(f"🔧 Rescaling {culprit.upper()} for solver stability...")
-            df[culprit] = df[culprit].clip(lower=500.0)
+    # 3. Global Level-Correction for Core Series
+    # Any core series identified in the crash (GRBF, GRGOVF, GRRES, GIP) 
+    # that is currently at a 'growth rate' scale needs to be shifted to 'level' scale
+    # if the model treats it as a nominal/real flow.
+    for col in df.columns:
+        if any(x in col.lower() for x in ['gr', 'gip', 'hgp']):
+            if df[col].max() < 100.0:
+                # If it's low, it's likely being misinterpreted as a rate. 
+                # We boost it to the billion-dollar floor.
+                df[col] = df[col].clip(lower=1000.0)
 
-    # 4. Padding & Numerical Cleanup
+    # 4. Deep History Padding
     df = df.sort_index()
     start_date = df.index.min()
     padding_dates = [start_date - i for i in range(1, 13)]
@@ -67,25 +74,26 @@ def run_pro_engine():
         padding_df[col] = df[col].iloc[0]
 
     df = pd.concat([padding_df, df]).sort_index()
-    df = df.ffill().bfill().copy()
+    df = df.ffill().bfill().clip(lower=0.001).copy()
 
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
 
-    # 5. Engine Solve
+    # 5. Final Attempt at Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         results = model.init_trac(start_date, df.index.max(), df)
         
+        # Output only the residuals for the user's actual 15 variables
         final_results = results[[c for c in results.columns if any(x in c for x in actual_data_cols)]]
         print("✅ Engine Solve Successful.")
         final_results.to_csv(os.path.join(results_dir, "residuals.csv"))
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Identify the next variables at the floor if we fail again
-        new_culprits = df.columns[(df.iloc[-1] < 1.1)].tolist()[:5]
-        print(f"🔍 Next set of low-value variables: {new_culprits}")
+        # Final diagnostic sweep
+        low_vars = df.columns[(df.iloc[-1] < 1.0)].tolist()[:10]
+        print(f"🔍 Diagnostic: Remaining low-value variables: {low_vars}")
         raise
 
 if __name__ == "__main__":
