@@ -18,15 +18,11 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 🚀 PRIME GROWTH: Use prime factors to prevent numerical identity collapse
-    t = np.arange(len(df))
-    for i, col in enumerate(actual_data_cols):
-        df[col] = df[col] * (1.00127 ** t) # 127 is prime
-
+    # Calculate Anchor
     macro_anchor = df[actual_data_cols].sum(axis=1).mean()
     print(f"📊 Macro Anchor Scale: {macro_anchor:.2f}")
 
-    # 2. Prime Dummy Injection
+    # 2. Injection with Massive Structural Offsets
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -36,29 +32,30 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
+                t = np.arange(len(df))
                 new_data = {}
-                primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]
                 
                 for i, var in enumerate(missing_vars):
-                    p = primes[i % len(primes)]
-                    growth_rate = 1.005 + (p * 0.00001)
-                    level_fraction = 0.01 + (i * 0.0002)
-                    new_data[var] = macro_anchor * level_fraction * (growth_rate ** t)
+                    # Growth rate: Prime-decoupled
+                    growth_rate = 1.005 + ((i % 13) * 0.0001)
+                    
+                    # 🚀 MASSIVE OFFSET: Instead of small fractions, give every dummy
+                    # a base level of at least 100 + a unique index offset.
+                    # This makes log(A/B) or log(A-B) mathematically 'safe'.
+                    base_offset = 100.0 + (i * 0.5)
+                    new_data[var] = base_offset * (growth_rate ** t)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Final Initialization Buffer
+    # 3. Aggressive Lookback Padding
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    df = pd.concat([padding, df]).sort_index().ffill().bfill()
-    # Add lookback drift to grease the solver start
-    for col in df.columns:
-        df[col] = df[col] * (1.0001 ** np.arange(len(df)))
-    df = df.clip(lower=10.0)
+    # Clip at 50.0 to move further away from log-boundary
+    df = pd.concat([padding, df]).sort_index().ffill().bfill().clip(lower=50.0)
 
     try:
         model = frbus.Frbus(model_xml)
