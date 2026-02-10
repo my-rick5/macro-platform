@@ -24,6 +24,11 @@ def run_pro_engine():
     # Ensure XGAP exists
     if 'GAP' in df.columns: df['XGAP'] = df['GAP']
 
+    # FIX: Inject missing dmptmax variable (usually safe to initialize at 0.0)
+    if 'dmptmax' not in df.columns:
+        print("⚠️  Warning: 'dmptmax' missing from data. Initializing with 0.0")
+        df['dmptmax'] = 0.0
+
     # Use the absolute path we established in Jenkins
     model = Frbus("/home/spark/models/model.xml")
 
