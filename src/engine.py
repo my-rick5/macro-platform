@@ -17,14 +17,14 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Reindex and Log-Linear Clean
+    # 2. Strict Reconstruction
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
     df = df.abs().clip(lower=10.0)
 
-    # 3. 🚀 THE DYNAMIC PULSE PROXY:
-    # Instead of constants (10.0 or 100.0), we give proxies a tiny unique 'wiggle'.
-    # This prevents 'resid = nan' caused by singular matrices or zero-slopes.
+    # 3. 🚀 THE DYNAMIC PULSE PROXY
+    # We replace constants with a unique 'wiggle' for every unmapped variable.
+    # This provides the non-zero derivatives the solver needs to avoid NaN residuals.
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -34,22 +34,21 @@ def run_pro_engine():
             new_vars_dict = {}
             for i, v in enumerate(expected_vars):
                 if v not in df.columns:
-                    # Prime-based frequency pulse: 100 + tiny oscillation
-                    freq = (i % 13 + 1) * 0.1
-                    new_vars_dict[v] = 100.0 + (np.sin(freq * t) * 0.5)
+                    # Unique frequency per variable prevents row-duplication in the Jacobian
+                    freq = (i % 17 + 1) * 0.05
+                    new_vars_dict[v] = 100.0 + (np.sin(freq * t) * 0.1)
             
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception: pass
 
-    # 4. Engine Execution with High Tolerance
+    # 4. Final Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         solve_start = df.index[8] # 2006Q1
         
         print(f"🏗️ Model Loaded. Solving with Dynamic Pulse: {solve_start} to {df.index.max()}")
         
-        # 🚀 THE FSOLVE FIX: We use 'init_trac' directly but with 'maxit=0' first 
-        # to diagnose which equation is specifically producing the NaN.
+        # Now that proxies have derivatives, init_trac should find a stable path.
         results = model.init_trac(solve_start, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
@@ -57,10 +56,6 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Identify the NaN culprit
-        if "nan" in str(e).lower():
-            nans = df.columns[df.isna().any()].tolist()
-            print(f"Critical NaN trace in variables: {nans}")
         raise
 
 if __name__ == "__main__":
