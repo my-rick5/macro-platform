@@ -24,7 +24,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Log-Neutral Injection
+    # 2. Role-Based Structural Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -37,32 +37,36 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # NEUTRALITY FIX: 
-                    # Rates and price indices stay at 1.0 (log-neutral)
-                    # We add a micro-jitter to prevent singular matrices
-                    base = 1.0 
-                    new_data[var] = base + (np.arange(len(df)) * 1e-8) + (i * 1e-10)
+                    # TARGETED MAGNITUDE: Federal/State/Residential investment needs 'mass'
+                    if any(x in var for x in ['grgov', 'grres', 'gdp', 'y']):
+                        base = 1000.0 
+                    elif any(x in var for x in ['pi', 'r', 'lur', 'targ']):
+                        base = 2.0
+                    else:
+                        base = 100.0 # Standard level baseline
+                    
+                    # Add a micro-trend to ensure no absolute zeros in growth equations
+                    new_data[var] = base + (np.arange(len(df)) * 1e-5) + (i * 1e-8)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Buffer and Final Solve
+    # 3. Buffer and Stability Floor
     df = df.sort_index()
     first_obs = df.index.min()
-    # 32-quarter buffer to ensure even the longest expectations (t+30) have data
     padding_df = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 33)], freq='Q'), columns=df.columns)
     for col in df.columns: padding_df[col] = df[col].iloc[0]
     
     df = pd.concat([padding_df, df]).sort_index()
-    # Floor of 0.1 remains to prevent absolute zero logs
-    df = df.ffill().bfill().clip(lower=0.1).copy()
+    # Floor of 0.5 for non-rate levels to prevent log(near-zero) jumps
+    for col in df.columns:
+        if not any(x in col for x in ['pi', 'r', 'tr', 'lur']):
+            df[col] = df[col].clip(lower=0.5)
 
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        
-        # Use solve_start with a deep lookback buffer
         results = model.init_trac(first_obs, df.index.max(), df)
         
         mask = [c for c in results.columns if c.lower() in actual_data_cols or any(x in c.lower() for x in actual_data_cols)]
@@ -71,9 +75,6 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Identify the exact column causing the log-floor strike
-        min_series = df.min().idxmin()
-        print(f"🔍 Diagnostic: Minimum value strike on variable `{min_series}`")
         raise
 
 if __name__ == "__main__":
