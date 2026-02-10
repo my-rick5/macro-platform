@@ -15,14 +15,12 @@ def run_pro_engine():
         tmp['date'] = pd.PeriodIndex(tmp['date'], freq='Q')
         data_frames.append(tmp.set_index('date'))
 
-    # THE FIX: Merge and explicitly sort the index
+    # Merge and explicitly sort the index
     df = pd.concat(data_frames, axis=1).sort_index()
 
     # Calculate overlapping window
     df_overlap = df.dropna()
     if df_overlap.empty:
-        # Fallback: if no perfect overlap, use the widest possible range 
-        # with model-stability padding (filling NaNs with 0)
         start_date = df.index.min()
         end_date = df.index.max()
         df = df.fillna(0.0) 
@@ -34,13 +32,15 @@ def run_pro_engine():
     print(f"Total Shape: {df.shape}")
     print(f"Timeline: {start_date} to {end_date}")
     
-    # Initialize Engine
-    model = frbus.Frbus(model_path="/home/spark/models/model.xml")
-    
+    # THE FIX: Correct initialization for pyfrbus
     try:
-        # Pass the validated, sorted dates to the solver
+        # Pass the path as a positional argument
+        model = frbus.Frbus("/home/spark/models/model.xml") 
+        print("🏗️  Model XML Loaded Successfully.")
+        
         results = model.init_trac(start_date, end_date, df)
         print("✅ Engine Solve Successful.")
+        
         results.to_csv("/home/spark/results/residuals.csv")
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
