@@ -10,7 +10,7 @@ def run_pro_engine():
     results_dir = "/home/spark/results"
     os.makedirs(results_dir, exist_ok=True)
     
-    # 1. Load and Case-Normalize
+    # 1. Load and Normalize
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
 
@@ -24,7 +24,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. XML Scraper with Identity-Neutral Injection
+    # 2. XML Scraper with High-Headroom Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -38,20 +38,19 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Use neutral baselines to keep log(x) near 0 or stable levels
+                    # INCREASED BASELINES: Providing more room before hitting 0.0
                     if any(x in var for x in ['pitarg', 'targ', 'pi']): base = 2.0
-                    elif any(x in var for x in ['tr', 'tax', 'rt']): base = 0.15
-                    elif any(x in var for x in ['gr', 'gc', 'gi', 'gx', 'gd', 'hgp']): base = 2000.0
-                    else: base = 1.0
+                    elif any(x in var for x in ['tr', 'tax', 'rt']): base = 0.20
+                    elif any(x in var for x in ['gr', 'gc', 'gi', 'gx', 'gd', 'hgp']): base = 3000.0
+                    else: base = 10.0 # Standard level baseline moved from 1.0 to 10.0
                     
-                    # Use a stable value with a micro-unique epsilon to satisfy identities
-                    new_data[var] = [base + (i * 1e-8)] * len(df)
+                    new_data[var] = [base + (i * 1e-7)] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Deep Buffer Padding
+    # 3. Robust Padding & Smart Clipping
     df = df.sort_index()
     start_date = df.index.min()
     padding_dates = [start_date - i for i in range(1, 13)]
@@ -61,28 +60,28 @@ def run_pro_engine():
 
     df = pd.concat([padding_df, df]).sort_index()
     
-    # 4. Engine Solve with Identity Preservation
+    # SMART CLIP: Use a 0.1 floor for nominal levels and 0.01 for rates
+    # This provides 10x more buffer for the variables identified in #258
+    for col in df.columns:
+        if any(x in col for x in ['pi', 'r', 'tr', 'lur']):
+            df[col] = df[col].clip(lower=0.01)
+        else:
+            df[col] = df[col].clip(lower=0.5) # Aggressive floor for levels
+
+    # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         
         solve_start = pd.PeriodIndex([f.index.min() for f in data_frames], freq='Q').min()
-        
-        # KEY STABILITY FIX: Use init_trac but ensure no zeros or negatives leak in
-        df = df.ffill().bfill().clip(lower=0.01).copy()
-        
         results = model.init_trac(solve_start, df.index.max(), df)
         
-        # Only extract residuals for the variables you care about
         mask = [c for c in results.columns if c.lower() in actual_data_cols or any(x in c.lower() for x in actual_data_cols)]
         print("✅ Engine Solve Successful.")
         results[mask].to_csv(os.path.join(results_dir, "residuals.csv"))
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Identify if any specific series have fallen below the log-safety threshold
-        under_floor = (df < 0.02).sum().sum()
-        print(f"🔍 Diagnostic: {under_floor} series values are near the safety floor (0.01).")
         raise
 
 if __name__ == "__main__":
