@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: True-Neutral Window Engine Started.")
+print("💓 Heartbeat: Homogeneous Bootstrap Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -38,23 +38,27 @@ def run_pro_engine():
     df_raw.columns = [c.lower() for c in df_raw.columns]
     target_variables = list(df_raw.columns)
 
-    # 🎯 2. TRUE-NEUTRAL DYNAMIC BUFFER
+    # 🎯 2. HOMOGENEOUS BOOTSTRAP BUFFER
     first_actual = df_raw.index.min()
     buffer_idx = pd.period_range(start=first_actual - 4, end=first_actual - 1, freq='Q')
-    print(f"📊 Data start: {first_actual}. Prepending neutral buffer: {buffer_idx[0]} to {buffer_idx[-1]}")
+    
+    # Calculate the 'Pulse' of your data to seed the buffer
+    avg_growth = df_raw.select_dtypes(include=[np.number]).pct_change().mean().mean()
+    if np.isnan(avg_growth): avg_growth = 0.005 # Default 0.5% if calc fails
+    
+    print(f"📊 Data start: {first_actual}. Seeding 1988 growth momentum at {avg_growth:.4f}")
     
     buffer_df = pd.DataFrame(index=buffer_idx, columns=df_raw.columns)
     for col in df_raw.columns:
-        # Force growth rates and interest rates to zero for a perfect steady state
         if any(x in col for x in ['g', 'pi', 'r', 'u', 'gap']):
-            buffer_df[col] = 0.0 
+            buffer_df[col] = avg_growth 
         else:
-            buffer_df[col] = df_raw[col].iloc[0] # Levels stay constant
+            buffer_df[col] = df_raw[col].iloc[0]
     
     df = pd.concat([buffer_df, df_raw]).sort_index()
 
     # 3. UNIT & ACCOUNTING ENFORCEMENT
-    print("⚖️ Normalizing units and enforcing identities on steady-state start...")
+    print("⚖️ Normalizing units and enforcing accounting identities...")
     for col in df.columns:
         avg_val = df[col].mean()
         is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
@@ -88,7 +92,6 @@ def run_pro_engine():
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
                 
-                # Check for solve anchor
                 if current_solve_start not in current_df.index:
                     new_idx = pd.period_range(start=min(current_df.index.min(), current_solve_start), 
                                               end=max(current_df.index.max(), full_end), freq='Q')
