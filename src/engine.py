@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Cold-Start Window Engine Started.")
+print("💓 Heartbeat: Dynamic-Anchor Window Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -38,19 +38,22 @@ def run_pro_engine():
     df_raw.columns = [c.lower() for c in df_raw.columns]
     target_variables = list(df_raw.columns)
 
-    # 🎯 2. COLD-START BUFFER (Prepending 2005)
-    print("❄️ Prepending 4-quarter buffer (2005Q1-Q4) to stabilize lags...")
+    # 🎯 2. DYNAMIC COLD-START BUFFER
+    # Detects the actual start (e.g., 1988Q3) and prepends 4 quarters immediately before it
     first_actual = df_raw.index.min()
-    buffer_idx = pd.period_range(start=first_actual - 4, end=first_actual - 1, freq='Q')
-    buffer_df = pd.DataFrame(index=buffer_idx, columns=df_raw.columns)
+    print(f"📊 Detected data start: {first_actual}")
     
+    buffer_idx = pd.period_range(start=first_actual - 4, end=first_actual - 1, freq='Q')
+    print(f"❄️ Prepending buffer for {buffer_idx[0]} to {buffer_idx[-1]}...")
+    
+    buffer_df = pd.DataFrame(index=buffer_idx, columns=df_raw.columns)
     for col in df_raw.columns:
-        buffer_df[col] = df_raw[col].iloc[0] # Flat-line 2006Q1 values backward
+        buffer_df[col] = df_raw[col].iloc[0] 
     
     df = pd.concat([buffer_df, df_raw]).sort_index()
 
-    # 3. UNIT & ACCOUNTING ENFORCEMENT (On the buffered dataset)
-    print("⚖️ Normalizing units and enforcing accounting on buffer start...")
+    # 3. UNIT & ACCOUNTING ENFORCEMENT
+    print("⚖️ Normalizing units and enforcing identities on the anchored start...")
     for col in df.columns:
         avg_val = df[col].mean()
         is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
@@ -65,8 +68,7 @@ def run_pro_engine():
     
     # 4. Initialization
     model = frbus.Frbus(model_xml)
-    # We solve starting from the buffer, but our target is the full range
-    solve_start = buffer_idx[0]
+    solve_start = buffer_idx[0] # Solve from the start of the buffer
     full_end = df.index.max()
 
     # 5. Recursive Windowing Logic
@@ -85,7 +87,7 @@ def run_pro_engine():
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
                 
-                # Ensure solve anchor
+                # Check for solve anchor
                 if current_solve_start not in current_df.index:
                     new_idx = pd.period_range(start=min(current_df.index.min(), current_solve_start), 
                                               end=max(current_df.index.max(), full_end), freq='Q')
@@ -93,6 +95,7 @@ def run_pro_engine():
 
                 results = model.init_trac(current_solve_start, current_solve_end, current_df)
                 
+                # Capture state
                 for col in results.columns:
                     if col not in target_variables:
                         missing_registry[col] = float(results[col].iloc[-1])
@@ -117,12 +120,11 @@ def run_pro_engine():
         
         current_solve_start += 4
             
-    # 6. Final Full Solve & Surgical Export (Original Range Only)
-    print("🔥 Executing final solve for actual period (2006-2019)...")
+    # 6. Final Solve & Export (Original Timeline Only)
+    print(f"🔥 Finalizing residuals for {first_actual} through {full_end}...")
     patch_df = pd.DataFrame(missing_registry, index=df.index)
     results = model.init_trac(first_actual, full_end, pd.concat([df, patch_df], axis=1))
     
-    # Surgical Export: Filter only original targets + their residuals
     final_cols = [v for v in target_variables if v in results.columns]
     final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
     results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
