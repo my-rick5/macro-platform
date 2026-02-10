@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Warm-Start Engine Started.")
+print("💓 Heartbeat: Inventory Float Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -21,7 +21,6 @@ def run_pro_engine():
     results_dir = "/home/spark/results"
     os.makedirs(results_dir, exist_ok=True)
     
-    # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
         
@@ -36,7 +35,6 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 2. Initialization & Logic
     model = frbus.Frbus(model_xml)
     solver_params = {'max_iter': 1000, 'tolerance': 1e-3}
     
@@ -48,21 +46,27 @@ def run_pro_engine():
     missing_registry = {}
     gdp_anchor = df['gngdp'].iloc[0] if 'gngdp' in df.columns else 5500
 
+    # 🎯 FIX: INVENTORY FLOAT (BALANCING ITEM)
     def get_identity_locked_proxy(var_name):
+        # 🛡️ Let Inventory float to satisfy the GDP identity
+        if any(x in var_name for x in ['ki', 'ein', 'li']):
+            return None 
+            
         if var_name.startswith('p') and not any(x in var_name for x in ['pi', 'ptr']):
             base_val = 1.0 
         elif var_name.startswith('q'):
-            return None # Endogenous release
+            return None # Endogenous release for real quantities
         elif any(x in var_name for x in ['r','pi','u','gap','adj','exp']):
             base_val = 0.05
         elif var_name.startswith('k'):
             base_val = gdp_anchor * 3.1
         else:
             base_val = 0.20
+            
         jitter = 1 + (np.random.uniform(-0.0001, 0.0001))
         return base_val * jitter
 
-    # 3. Safe Anchor Loop
+    # (3. Anchor Logic remains same as previous safe-start)
     print(f"⚡ Establishing anchor at {first_actual}...")
     init_passed = False
     attempts = 0
@@ -84,7 +88,7 @@ def run_pro_engine():
                 attempts += 1
             else: attempts += 1
 
-    # 4. Global Recursive Shield with Warm-Start Damping
+    # 4. Global Recursive Shield with Inventory Float
     current_solve_start = first_actual + 1
     while current_solve_start <= full_end:
         current_solve_end = min(current_solve_start + 3, full_end)
@@ -96,9 +100,7 @@ def run_pro_engine():
             try:
                 current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                 
-                # 🎯 FIX: WARM-START DAMPING
                 if current_solve_start == first_actual + 1:
-                    print("🌡️  Applying warm-start damping to transition window...")
                     for var in missing_registry:
                         current_df.loc[current_solve_start:current_solve_end, var] = missing_registry[var]
 
@@ -111,7 +113,7 @@ def run_pro_engine():
                 match = re.search(r'`([^`]+)`', str(e))
                 if match:
                     var = match.group(1).lower()
-                    print(f"🛠️  Identity Lock: Seeding {var}...")
+                    print(f"🛠️  Inventory Float Check: Seeding {var}...")
                     proxy_val = get_identity_locked_proxy(var)
                     if proxy_val is not None: missing_registry[var] = proxy_val
                     window_attempts += 1
@@ -122,8 +124,7 @@ def run_pro_engine():
             sys.exit(1)
         current_solve_start += 4
             
-    # 5. Final Export
-    print(f"🔥 Exporting full residuals...")
+    print("🔥 Exporting residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data, **solver_params)
     results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
