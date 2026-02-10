@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Robust-Momentum Engine Started.")
+print("💓 Heartbeat: Symmetric Decay Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -38,31 +38,26 @@ def run_pro_engine():
     df_raw.columns = [c.lower() for c in df_raw.columns]
     target_variables = list(df_raw.columns)
 
-    # 🎯 2. ROBUST DYNAMIC BUFFER (Anti-Infinity)
+    # 🎯 2. SYMMETRIC DECAY BUFFER (Steady-State Initialization)
     first_actual = df_raw.index.min()
     buffer_idx = pd.period_range(start=first_actual - 4, end=first_actual - 1, freq='Q')
     
-    # FIX: Calculate momentum while handling Inf/NaN spikes
-    growth_series = df_raw.select_dtypes(include=[np.number]).pct_change()
-    avg_growth = growth_series.replace([np.inf, -np.inf], np.nan).mean().mean()
-    
-    # Clip to +/- 5% to prevent extreme structural shocks
-    avg_growth = np.clip(avg_growth, -0.05, 0.05)
-    if np.isnan(avg_growth): avg_growth = 0.005 
-    
-    print(f"📊 Data start: {first_actual}. Seeding momentum at {avg_growth:.4f} (Clipped)")
+    # Use a positive 0.1% drift to keep internal identities 'moving' forward
+    steady_drift = 0.001 
+    print(f"📊 Data start: {first_actual}. Seeding steady-state drift at {steady_drift:.4f}")
     
     buffer_df = pd.DataFrame(index=buffer_idx, columns=df_raw.columns)
     for col in df_raw.columns:
         if any(x in col for x in ['g', 'pi', 'r', 'u', 'gap']):
-            buffer_df[col] = avg_growth 
+            buffer_df[col] = steady_drift 
         else:
-            buffer_df[col] = df_raw[col].iloc[0]
+            # Anchor levels to be identity-consistent with the drift
+            buffer_df[col] = df_raw[col].iloc[0] / (1 + steady_drift)
     
     df = pd.concat([buffer_df, df_raw]).sort_index()
 
     # 3. UNIT & ACCOUNTING ENFORCEMENT
-    print("⚖️ Normalizing units and enforcing accounting identities...")
+    print("⚖️ Normalizing units and enforcing identities on steady-state start...")
     for col in df.columns:
         avg_val = df[col].mean()
         is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
@@ -96,7 +91,6 @@ def run_pro_engine():
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
                 
-                # Check for solve anchor
                 if current_solve_start not in current_df.index:
                     new_idx = pd.period_range(start=min(current_df.index.min(), current_solve_start), 
                                               end=max(current_df.index.max(), full_end), freq='Q')
