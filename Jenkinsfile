@@ -11,23 +11,8 @@ pipeline {
         stage('Initialize') {
             steps {
                 sh "mkdir -p results models data"
+                // Clean up any stale containers from aborted builds
                 sh "docker rm -f ${CONTAINER_NAME} || true"
-            }
-        }
-
-        stage('Debug XML Structure') {
-            steps {
-                script {
-                    // Using env.BUILD_NUMBER ensures we target 'engine-run-221', 'engine-run-222', etc.
-                    def containerName = "engine-run-${env.BUILD_NUMBER}"
-                    echo "🔍 Inspecting XML formatting in ${containerName}..."
-                    
-                    // 1. Print the header
-                    sh "docker exec ${containerName} head -n 20 /home/spark/models/model.xml"
-                    
-                    // 2. Find exactly how dmptmax is defined (attributes vs tags)
-                    sh "docker exec ${containerName} grep -C 2 'dmptmax' /home/spark/models/model.xml"
-                }
             }
         }
 
@@ -37,6 +22,12 @@ pipeline {
                     echo "🧪 Preparing Container & Data..."
                     sh "docker run -d --name ${CONTAINER_NAME} --user 0:0 --entrypoint tail ${DOCKER_IMAGE} -f /dev/null"
                     sh "docker cp . ${CONTAINER_NAME}:/source_code"
+
+                    // --- DEBUG XML SECTION (Now inside the container lifecycle) ---
+                    echo "🔍 Inspecting XML formatting in ${CONTAINER_NAME}..."
+                    sh "docker exec ${CONTAINER_NAME} head -n 20 /home/spark/models/model.xml"
+                    sh "docker exec ${CONTAINER_NAME} grep -C 2 'dmptmax' /home/spark/models/model.xml || echo 'dmptmax not found in XML text'"
+                    // --------------------------------------------------------------
 
                     echo "📦 Precision Namespace Alignment & Package Patching..."
                     sh """
@@ -58,7 +49,6 @@ pipeline {
                         ${CONTAINER_NAME} python3 /source_code/src/preprocess.py
                     """
                     
-                    // FIXED: Use // for Groovy comments and properly capture the shell output
                     def csvCount = sh(script: "docker exec ${CONTAINER_NAME} ls /home/spark/data/processed | wc -l", returnStdout: true).trim()
                     
                     if (csvCount == "0") {
@@ -74,6 +64,7 @@ pipeline {
                         ${CONTAINER_NAME} python3 /source_code/src/engine.py
                     """
                     
+                    // Copy results back to workspace before container is destroyed
                     sh "docker cp ${CONTAINER_NAME}:/home/spark/results/. ./results/ || true"
                 }
             }
@@ -96,4 +87,4 @@ pipeline {
             echo "🔴 Pipeline Failed: Check the Master Data Matrix logs for variable gaps."
         }
     }
-}   
+}
