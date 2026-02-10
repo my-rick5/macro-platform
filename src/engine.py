@@ -8,7 +8,9 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
-    os.makedirs(results_dir, exist_index=True)
+    
+    # FIXED: Changed 'exist_index' to 'exist_ok'
+    os.makedirs(results_dir, exist_ok=True)
     
     # 1. Load and Normalize
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
@@ -24,8 +26,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # DYNAMIC SCALING: Calculate the average magnitude of your real data
-    # We will use this as the baseline for all injected dummies
+    # DYNAMIC SCALING: Maintain mirrored magnitude for stability
     real_mean_magnitude = df[actual_data_cols].mean().mean()
     print(f"📊 Mirroring scale magnitude: {real_mean_magnitude:.2f}")
 
@@ -43,19 +44,17 @@ def run_pro_engine():
                 t = np.arange(len(df))
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Use the mirrored mean for levels, keep rates around 2%
                     if any(x in var for x in ['pitarg', 'targ', 'pi', 'r', 'lur']): 
                         base = 2.0
                     else: 
                         base = real_mean_magnitude
                     
-                    # Trend ensures no divide-by-zero, jitter ensures unique Jacobian columns
                     new_data[var] = base + (t * 1e-6) + (i * 1e-8)
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Buffer and Floor
+    # 3. History Buffer
     df = df.sort_index()
     first_obs = df.index.min()
     padding_df = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 25)], freq='Q'), columns=df.columns)
@@ -76,9 +75,6 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Identify variables that are out of scale with the new mirrored mean
-        outliers = (df.iloc[-1] / real_mean_magnitude).nlargest(3).to_dict()
-        print(f"🔍 Scale Outliers: {outliers}")
         raise
 
 if __name__ == "__main__":
