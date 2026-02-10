@@ -19,9 +19,10 @@ def run_pro_engine():
         tmp['date'] = pd.PeriodIndex(tmp['date'], freq='Q')
         data_frames.append(tmp.set_index('date'))
     
+    # Initial DF from actual data
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. XML-Aware Scraper with Safe Baselines
+    # 2. XML-Aware Scraper with Optimized Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -33,28 +34,30 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️  Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
-                new_cols = {}
+                # Optimized: Create a separate DF for missing vars and join ONCE
+                new_data = {}
                 for var in missing_vars:
-                    # FIX: Initialize to 1.0 to prevent 'divide by zero' in logs
-                    # Policy variables keep 2.0; everything else gets 1.0 baseline
                     val = 2.0 if any(x in var for x in ['mpt', 'lur', 'pi']) else 1.0
-                    new_cols[var] = val
+                    new_data[var] = [val] * len(df)
                 
-                # Use assign to avoid the concatenation FutureWarning
-                df = df.assign(**new_cols)
+                missing_df = pd.DataFrame(new_data, index=df.index)
+                df = pd.concat([df, missing_df], axis=1)
+                
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Lag Padding
+    # 3. INCREASED Lag Padding (to 8 Quarters)
     df = df.sort_index()
     start_date = df.index.min()
-    padding_dates = [start_date - i for i in range(1, 5)]
+    # 8 quarters provides enough history for t-1 through t-8 lags
+    padding_dates = [start_date - i for i in range(1, 9)]
     padding_df = pd.DataFrame(1.0, index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
     
+    # Consolidate and defragment
     df = pd.concat([padding_df, df]).sort_index()
-    df = df.ffill().bfill().replace(0, 1.0) # Final safety check for zeros
+    df = df.copy() # This forces a defragmentation of the underlying memory
+    df = df.ffill().bfill().replace(0, 1.0)
     
-    # Save verification file
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
     print(f"📊 Final Padded Matrix Shape: {df.shape}")
 
