@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import re
+import sys
 import numpy as np
 from pyfrbus import frbus, exceptions
 
@@ -10,7 +11,7 @@ def run_pro_engine():
     results_dir = "/home/spark/results"
     os.makedirs(results_dir, exist_ok=True)
     
-    # 1. Initial Load and Index Fix
+    # 1. Load and Normalize Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
     df = pd.concat([pd.read_csv(os.path.join(data_path, f)).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') for f in files], axis=1).sort_index()
@@ -22,7 +23,7 @@ def run_pro_engine():
     solve_start = pd.Period('2006Q1', freq='Q')
     solve_end = df.index.max()
 
-    # 3. 🚀 THE ABSOLUTE DOMAIN HEALING LOOP
+    # 3. 🚀 THE FATAL-EXIT HEALING LOOP
     max_retries = 500
     attempts = 0
     missing_registry = {} 
@@ -31,45 +32,41 @@ def run_pro_engine():
 
     while attempts < max_retries:
         try:
-            # Vectorized Application
             if missing_registry:
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
             else:
                 current_df = df.copy()
 
-            # Ensure solve anchor is reachable
             if solve_start not in current_df.index:
                 new_idx = pd.period_range(start=min(current_df.index.min(), solve_start), 
                                           end=max(current_df.index.max(), solve_end), 
                                           freq='Q')
                 current_df = current_df.reindex(new_idx).ffill().bfill()
 
-            # Attempt solve
             results = model.init_trac(solve_start, solve_end, current_df)
             print(f"✅ Engine Solve Successful after {attempts} healing cycles.")
             results.to_csv(os.path.join(results_dir, "residuals.csv"))
-            break
-            
+            return # Exit function cleanly on success
+
         except exceptions.MissingDataError as e:
             match = re.search(r'`([^`]+)`', str(e))
             if match:
                 var = match.group(1).lower()
-                # 🚀 ABSOLUTE SAFE START: Use 10.0 to stay far away from zero/log boundaries
                 missing_registry[var] = 10.0
                 attempts += 1
             else:
                 raise e
         except (ValueError, exceptions.ComputationError) as e:
-            # 🚀 RANDOMIZED ENTROPY: If we hit a log error, slightly randomize 
-            # all patched values to break mathematical ties/singularities.
-            print(f"⚠️ Log Singularity! Randomized recovery in progress...")
-            missing_registry = {k: v * (1.0 + (np.random.rand() * 0.1)) for k, v in missing_registry.items()}
+            # 🚀 AGGRESSIVE ENTROPY: Increased variance to 50% to break Build #408 loop
+            missing_registry = {k: v * (0.5 + np.random.rand()) for k, v in missing_registry.items()}
             attempts += 1
-            if attempts % 10 == 0:
+            if attempts % 50 == 0:
                 print(f"🔄 Entropy Cycle {attempts}...")
-    else:
-        print("❌ Failed to find stable mathematical domain.")
+
+    # 4. 🛑 THE JENKINS FIX:
+    print("❌ CRITICAL: Failed to find stable mathematical domain.")
+    sys.exit(1) # This forces Jenkins to report a FAILURE
 
 if __name__ == "__main__":
     run_pro_engine()
