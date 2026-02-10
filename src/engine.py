@@ -14,6 +14,9 @@ def check_hardware_readiness():
 
 def run_pro_engine():
     check_hardware_readiness()
+
+    start_date = "2015Q1"
+    end_date = "2025Q3"
     
     print("🚀 Initializing FRB/US Structural Engine...")
     df = load_data("/home/spark/data/y_unemp.csv") 
@@ -29,7 +32,11 @@ def run_pro_engine():
     # FIX: Clean positional arguments. 
     # Usually: init_trac(start, end, dataframe, mce)
     # We remove the "start=" and "end=" keywords to avoid syntax errors
-    results = model.init_trac(2015.0, 2025.75, df, None)
+    results = model.init_trac(start_date, end_date, df)
+
+    print("🚀 Running Forecast Simulation...")
+    # FIX: solve uses the exact same 3-argument structure
+    output = model.solve(start_date, end_date, results)
 
     # --- JUDGMENT ALERT LOGIC ---
     threshold = 0.5
@@ -46,6 +53,7 @@ def run_pro_engine():
 
     # Use absolute path for results too
     results.to_csv("/home/spark/results/final_judgment_report.csv")
+    output.to_csv("/home/spark/results/final_simulation_forecast.csv")
     print("\n✅ Engine Run Complete. Report archived.")
 
 if __name__ == "__main__":
