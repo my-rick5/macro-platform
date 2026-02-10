@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Safe-Initialization Engine Started.")
+print("💓 Heartbeat: Stochastic Jitter Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -38,8 +38,6 @@ def run_pro_engine():
 
     # 2. Initialization & Identity-Lock Logic
     model = frbus.Frbus(model_xml)
-    
-    # Standard parameters for the long-run windows
     solver_params = {'max_iter': 1000, 'tolerance': 1e-3}
     
     if 'mco_mode' not in df.columns:
@@ -50,25 +48,30 @@ def run_pro_engine():
     missing_registry = {}
     gdp_anchor = df['gngdp'].iloc[0] if 'gngdp' in df.columns else 5500
 
+    # 🎯 FIX: STOCHASTIC JITTER INJECTION
     def get_identity_locked_proxy(var_name):
         if var_name.startswith('p') and not any(x in var_name for x in ['pi', 'ptr']):
-            return 1.0 
-        if var_name.startswith('q'):
-            return gdp_anchor * 0.15 
-        if any(x in var_name for x in ['r','pi','u','gap','adj','exp']):
-            return 0.05
-        if var_name.startswith('k'):
-            return gdp_anchor * 3.1
-        return 0.20
+            base_val = 1.0 
+        elif var_name.startswith('q'):
+            base_val = gdp_anchor * 0.15 
+        elif any(x in var_name for x in ['r','pi','u','gap','adj','exp']):
+            base_val = 0.05
+        elif var_name.startswith('k'):
+            base_val = gdp_anchor * 3.1
+        else:
+            base_val = 0.20
+            
+        # 🎲 Add 0.01% random noise to prevent "Zero-Delta" singular matrices
+        jitter = 1 + (np.random.uniform(-0.0001, 0.0001))
+        return base_val * jitter
 
-    # 🎯 3. SAFE ANCHOR LOOP: Low-iter capping to prevent C++ silent crash
-    print(f"⚡ Establishing safe-anchor at {first_actual}...")
+    # 3. Safe Anchor Loop
+    print(f"⚡ Establishing stochastic anchor at {first_actual}...")
     init_passed = False
     attempts = 0
-    while not init_passed and attempts < 200:
+    while not init_passed and attempts < 250:
         try:
-            # We use a very low iter cap for the search phase to keep the matrix stable
-            anchor_params = {**solver_params, 'max_iter': 20}
+            anchor_params = {**solver_params, 'max_iter': 25}
             first_q_results = model.init_trac(first_actual, first_actual, df, **anchor_params)
             for col in first_q_results.columns:
                 if col not in target_variables:
@@ -82,7 +85,6 @@ def run_pro_engine():
                 df[var] = get_identity_locked_proxy(var)
                 attempts += 1
             else: 
-                print(f"⚠️ Structural Jitter at Attempt {attempts}. Retrying...")
                 attempts += 1
 
     # 4. Global Recursive Shield
@@ -116,7 +118,7 @@ def run_pro_engine():
         current_solve_start += 4
             
     # 5. Final Export
-    print(f"🔥 Exporting full stabilized residuals...")
+    print(f"🔥 Exporting stochastic stabilized residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data, **solver_params)
     results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
