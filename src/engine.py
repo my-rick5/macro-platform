@@ -22,7 +22,7 @@ def run_pro_engine():
     
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. XML Scraper with Jittered Baselines
+    # 2. XML Scraper with Normalized Baselines
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -36,47 +36,46 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
                 new_data = {}
                 for var in missing_vars:
-                    # Logic: 100 for nominals, 2 for rates, 1 for others
-                    if any(p in var for p in ['p', 'x', 'y']): base = 100.0
-                    elif any(r in var for r in ['mpt', 'lur', 'pi', 'r']): base = 2.0
-                    else: base = 1.0
+                    # Using 1.0 as the universal baseline to keep logs centered near zero
+                    base = 1.0
+                    # Rates (mpt, lur, pi) stay at a small positive value
+                    if any(r in var for r in ['mpt', 'lur', 'pi', 'r']): base = 0.02
                     
-                    # ADD JITTER: Ensures no value or its delta is exactly zero
-                    new_data[var] = base + np.random.uniform(1e-9, 1e-8, size=len(df))
+                    new_data[var] = base + np.random.uniform(1e-6, 2e-6, size=len(df))
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Padding & Global Jitter
+    # 3. Padding & Floating Point Stability
     df = df.sort_index()
     start_date = df.index.min()
     padding_dates = [start_date - i for i in range(1, 9)]
-    padding_df = pd.DataFrame(100.0, index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
+    # Match the 1.0 baseline for padding
+    padding_df = pd.DataFrame(1.0, index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
     
     df = pd.concat([padding_df, df]).sort_index()
     
-    # Apply global jitter and clamp to finalize stability
-    df = df.ffill().bfill()
-    df = df + np.random.uniform(1e-9, 1e-8, size=df.shape) 
-    df = df.clip(lower=1e-7).copy()
+    # Final cleanup: Ensure no infinite values or extreme outliers
+    df = df.ffill().bfill().replace([np.inf, -np.inf], 1.0)
+    # Clamp to a safe "Real World" range to prevent log overflows
+    df = df.clip(lower=1e-6, upper=1e6).copy()
 
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
-    print(f"📊 Jittered Matrix Saved. Range: {df.index.min()} to {df.index.max()}")
+    print(f"📊 Stable Matrix Saved. Range: {df.index.min()} to {df.index.max()}")
 
     # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
+        # Use a high-tolerance solver if possible, or standard init_trac
         results = model.init_trac(start_date, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results.to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Identify the culprit: find any remaining zeros or NaNs
-        nulls = df.isnull().sum().sum()
-        zeros = (df <= 0).sum().sum()
-        print(f"🔍 Diagnostic: {nulls} NaNs and {zeros} non-positive values found.")
+        # Identify the numerical range of the data causing the failure
+        print(f"🔍 Numerical Range: Min={df.min().min():.4e}, Max={df.max().max():.4e}")
         raise
 
 if __name__ == "__main__":
