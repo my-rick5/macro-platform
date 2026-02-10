@@ -18,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 🚀 THE ZERO-VARIANCE FIX: Mute dummies to prevent identity crossovers
+    # 🚀 THE FIX: Assign unique, tiny growth rates to every dummy
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -27,27 +27,32 @@ def run_pro_engine():
             missing_vars = [v for v in expected_vars if v not in actual_data_cols]
             
             if missing_vars:
-                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} zero-variance dummies...")
-                # Assign a constant tiny value to all 397 dummies. 
-                # This ensures they cannot 'grow' into a subtraction conflict.
-                for var in missing_vars:
-                    df[var] = 0.0001
+                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} active dummies...")
+                t = np.arange(len(df))
+                new_data = {}
+                for i, var in enumerate(missing_vars):
+                    # Growth is tiny (0.01% - 0.05%) to avoid identity collisions, 
+                    # but unique to ensure log(growth) != 0.
+                    growth_rate = 1.0001 + (i * 0.000001)
+                    new_data[var] = 0.01 * (growth_rate ** t)
+                
+                # De-fragment the dataframe immediately to avoid the warnings seen in Build 311
+                df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 2. Aggressive Real Data Floor
+    # 2. Buffering and Stability Floor
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    # Use a safe absolute value and floor for the real data components
     df = pd.concat([padding, df]).sort_index().ffill().bfill()
-    df = df.abs().clip(lower=0.1)
+    # Absolute floor of 0.01 to keep log space strictly positive
+    df = df.abs().clip(lower=0.01)
 
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        # init_trac should now only have to solve for the 15 real variables
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
