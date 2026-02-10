@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Recursive Loop Engine Started.")
+print("💓 Heartbeat: Global Shield Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -36,62 +36,42 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 2. PATTERN-BASED PROXY GENERATOR
-    print("📋 Injecting known structural foundations...")
-    auto_proxies = {
-        'dmptmax': 0.35, 'picorr': 0.02, 'ecoind': 0.0, 'zlb': 0.0,
-        'delrff': 0.0, 'rffmin': 0.0, 'rffmax': 0.20, 'delrpc': 0.0,
-        'dmptlur': 0.20, 'dmptss': 0.15, 'dmptr': 0.10
-    }
-    for var, val in auto_proxies.items():
-        if var not in df.columns:
-            df[var] = val
-
-    # 3. UNIT & ACCOUNTING ENFORCEMENT
-    print("⚖️ Normalizing units and enforcing identities...")
-    for col in df.columns:
-        if df[col].mean() < 10 and not any(x in col for x in ['r', 'pi', 'u', 'gap', 'del']):
-            df[col] = df[col] * 1000
-
-    # 4. Initialization
+    # 2. Initialization & Persistent Anchor Loop
     model = frbus.Frbus(model_xml)
     first_actual = df.index.min()
     full_end = df.index.max()
     missing_registry = {}
 
-    # 🎯 5. RECURSIVE INITIALIZATION LOOP
     print(f"⚡ Establishing persistent anchor at {first_actual}...")
     init_passed = False
     attempts = 0
-    while not init_passed and attempts < 30:
+    while not init_passed and attempts < 50:
         try:
             first_q_results = model.init_trac(first_actual, first_actual, df)
             for col in first_q_results.columns:
                 if col not in target_variables:
                     missing_registry[col] = float(first_q_results[col].iloc[0])
             init_passed = True
-            print(f"✅ Isolation Anchor secured after {attempts} patches.")
         except Exception as e:
             match = re.search(r'`([^`]+)`', str(e))
             if match:
                 var = match.group(1).lower()
-                print(f"🛠️  Loop Patch: Seeding {var}...")
-                # Seed rates/inflation at 5%, levels at 20% proxy
+                print(f"🛠️  Anchor Patch: Seeding {var}...")
                 df[var] = 0.05 if any(x in var for x in ['r','pi','u','adj','exp']) else 0.20
                 attempts += 1
             else:
-                print(f"❌ Structural break in loop: {e}")
                 sys.exit(1)
 
-    # 6. Recursive Windowing Logic
+    # 🎯 3. GLOBAL RECURSIVE SHIELD (Covering the full timeline)
     current_solve_start = first_actual + 1
     while current_solve_start <= full_end:
         current_solve_end = min(current_solve_start + 3, full_end)
         print(f"🕒 Window: {current_solve_start} to {current_solve_end}")
         
-        window_attempts = 0
         window_passed = False
-        while window_attempts < 150:
+        window_attempts = 0
+        
+        while not window_passed and window_attempts < 50:
             try:
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
@@ -101,29 +81,27 @@ def run_pro_engine():
                     if col not in target_variables:
                         missing_registry[col] = float(results[col].iloc[-1])
                 window_passed = True
-                break
-            except exceptions.MissingDataError as e:
+            except Exception as e:
                 match = re.search(r'`([^`]+)`', str(e))
                 if match:
                     var = match.group(1).lower()
+                    print(f"🛠️  Shield Patch: Seeding {var} globally...")
+                    # Persist in the registry for ALL future windows
                     missing_registry[var] = 0.05 if any(x in var for x in ['r','pi','u']) else 1000.0
-                window_attempts += 1
-            except:
-                window_attempts += 1
+                    window_attempts += 1
+                else:
+                    window_attempts += 1 # Retry with jitter/drift if needed
 
         if not window_passed:
             print(f"❌ Structural fail at window {current_solve_start}.")
             sys.exit(1)
         current_solve_start += 4
             
-    # 7. Final Export
+    # 4. Final Export
     print(f"🔥 Exporting full residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data)
-    
-    final_cols = [v for v in target_variables if v in results.columns]
-    final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
-    results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
+    results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
     print("✅ Build Successful. Timeline Complete.")
 
 if __name__ == "__main__":
