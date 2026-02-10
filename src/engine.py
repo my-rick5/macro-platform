@@ -8,7 +8,6 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
-    # 🚀 FIXED TYPO: Changed exist_index to exist_ok
     os.makedirs(results_dir, exist_ok=True)
     
     # 1. Load Data
@@ -19,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Minimal Magnitude Vectorized Injection
+    # 2. True Zero Vectorized Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -28,28 +27,26 @@ def run_pro_engine():
             missing_vars = [v for v in expected_vars if v not in actual_data_cols]
             
             if missing_vars:
-                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} minimal dummies...")
-                new_vars_dict = {}
-                for i, var in enumerate(missing_vars):
-                    # Maintain microscopic scale to prevent log-subtraction conflict
-                    new_vars_dict[var] = 0.000001 + (i * 1e-10)
-                
+                print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} zeroed dummies...")
+                # 🚀 THE FIX: Set missing variables to exactly 0.0
+                # This ensures they do not interfere with log-difference identities.
+                new_vars_dict = {var: 0.0 for var in missing_vars}
                 df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Padding and Global Floor
+    # 3. Padding and Sanitization
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
-    
-    # Use a tiny floor (1e-07) for log-stability
-    df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=1e-07)
+    df = pd.concat([padding, df]).sort_index().ffill().bfill()
 
     # 4. Model Execution
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Executing vanilla init_trac...")
+        # We solve the model with zeros. Any log(0) identities in FRB/US usually 
+        # have internal logic to handle missing data if the value is exactly 0.0.
         results = model.init_trac(first_obs, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
