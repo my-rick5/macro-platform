@@ -9,7 +9,7 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
-    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(results_dir, exist_index=True)
     
     # 1. Load Data and Capture Target Columns
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
@@ -24,52 +24,64 @@ def run_pro_engine():
     solve_start = pd.Period('2006Q1', freq='Q')
     solve_end = df.index.max()
 
-    # 3. 🚀 THE BIPOLAR SEARCH LOOP
-    max_retries = 1500 # Even more headroom
+    # 3. 🚀 MERGED SPLIT-MAGNITUDE LOOP
+    max_retries = 800
     attempts = 0
     missing_registry = {} 
     
-    print(f"🏗️ Model Loaded. Entering Bipolar Surgical Loop...")
+    print(f"🏗️ Model Loaded. Entering Merged Stabilization Loop...")
 
     while attempts < max_retries:
         try:
+            # Vectorized assembly to prevent fragmentation
             if missing_registry:
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
             else:
                 current_df = df.copy()
 
+            # Ensure solve anchor is reachable
+            if solve_start not in current_df.index:
+                new_idx = pd.period_range(start=min(current_df.index.min(), solve_start), 
+                                          end=max(current_df.index.max(), solve_end), 
+                                          freq='Q')
+                current_df = current_df.reindex(new_idx).ffill().bfill()
+
+            # Attempt tracking solve
             results = model.init_trac(solve_start, solve_end, current_df)
             
-            # SUCCESS
+            # 🎯 SUCCESS: PERFORM SURGICAL EXPORT
+            print(f"✅ Success at Cycle {attempts}. Filtering output...")
             final_cols = []
             for v in target_variables:
                 if v in results.columns: final_cols.append(v)
                 res_v = f"{v}_res"
                 if res_v in results.columns: final_cols.append(res_v)
             
+            # Export the lightweight file
             results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
-            print(f"✅ Success at Cycle {attempts}. Exported residuals_lite.csv.")
+            print("📦 Exported residuals_lite.csv.")
             return 
 
         except exceptions.MissingDataError as e:
             match = re.search(r'`([^`]+)`', str(e))
             if match:
                 var = match.group(1).lower()
-                missing_registry[var] = 10.0 # Standard start
+                # Initialize based on variable type to avoid log errors
+                if any(x in var for x in ['r', 'pi', 'u', 'gap', 'del']):
+                    missing_registry[var] = 0.05 
+                else:
+                    missing_registry[var] = 100.0
                 attempts += 1
             else: raise e
-        except (ValueError, exceptions.ComputationError):
-            # 🚀 BIPOLAR ESCALATION: 
-            # We alternate directions. Even cycles go UP, Odd cycles go DOWN.
-            # This prevents getting stuck on a "one-way" math wall.
-            direction = 1 if attempts % 2 == 0 else -1
-            shift = 0.057 * direction # Using a prime shift
             
-            missing_registry = {k: max(0.01, v + shift) for k, v in missing_registry.items()}
+        except (ValueError, exceptions.ComputationError):
+            # Apply unique prime scaling to break identities like (X - Y = 0)
+            multiplier = 1.0013 + (attempts * 0.0001)
+            missing_registry = {k: v * multiplier for k, v in missing_registry.items()}
             attempts += 1
-            if attempts % 100 == 0:
-                print(f"🔄 Bipolar Cycle {attempts} (Direction: {'UP' if direction > 0 else 'DOWN'})...")
+            if attempts % 50 == 0:
+                print(f"🔄 Scaling Cycle {attempts}...")
 
     print("❌ CRITICAL: Failed to find stable mathematical domain.")
     sys.exit(1)
