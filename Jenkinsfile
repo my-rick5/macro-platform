@@ -24,28 +24,13 @@ pipeline {
 
                     echo "📦 Precision Namespace Alignment & Package Patching..."
                     sh """
-                        # 1. Install package and dependencies
                         docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install . psutil openpyxl
-                        
-                        # 2. Setup /opt for the platform
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/. /opt/macro_platform/
-                        
-                        # 3. PATCH: Fix floating-point index bug in pyfrbus core
                         docker exec ${CONTAINER_NAME} sed -i 's/data.index, freq=\"Q\"/data.index.astype(str), freq=\"Q\"/g' /opt/macro_platform/pyfrbus/load_data.py
-                        
-                        # 4. Initialize Data Structure
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data/processed /home/spark/results
-                        
-                        # 5. VERIFY SOURCE: Check if Excel exists in repo before copying
-                        echo "🔍 Listing external_data contents..."
-                        docker exec ${CONTAINER_NAME} ls -l /source_code/external_data/
-                        
-                        # 6. COPY: Move library and model to spark home
                         docker exec ${CONTAINER_NAME} cp /source_code/external_data/GBweb_Row_Format.xlsx /home/spark/data/library.xlsx || echo "⚠️ Warning: library.xlsx not found"
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/models/model.xml /home/spark/models/model.xml
-                        
-                        # 7. CLEAN: Remove shadowing source code to ensure /opt is used
                         docker exec ${CONTAINER_NAME} rm -rf /home/spark/pyfrbus
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
@@ -57,12 +42,12 @@ pipeline {
                         ${CONTAINER_NAME} python3 /source_code/src/preprocess.py
                     """
                     
-                    # FAIL FAST: Check if any CSVs were generated
-                    script {
-                        def csvCount = sh(script: "docker exec ${CONTAINER_NAME} ls /home/spark/data/processed | wc -l", returnStdout: true).trim()
-                        if (csvCount == "0") {
-                            error "❌ Build Failed: Preprocessor found 0 variables. Check Excel header regex."
-                        }
+                    // FIXED: Use // for Groovy comments and properly capture the shell output
+                    def csvCount = sh(script: "docker exec ${CONTAINER_NAME} ls /home/spark/data/processed | wc -l", returnStdout: true).trim()
+                    
+                    if (csvCount == "0") {
+                        error "❌ Build Failed: Preprocessor found 0 variables. Check Excel header regex."
+                    } else {
                         echo "✅ Preprocessor generated ${csvCount} variables."
                     }
 
@@ -95,4 +80,4 @@ pipeline {
             echo "🔴 Pipeline Failed: Check the Master Data Matrix logs for variable gaps."
         }
     }
-}
+}   
