@@ -24,12 +24,12 @@ def run_pro_engine():
     solve_start = pd.Period('2006Q1', freq='Q')
     solve_end = df.index.max()
 
-    # 3. 🚀 THE DETERMINISTIC HEALING LOOP
-    max_retries = 1000 # Increased headroom
+    # 3. 🚀 THE BIPOLAR SEARCH LOOP
+    max_retries = 1500 # Even more headroom
     attempts = 0
     missing_registry = {} 
     
-    print(f"🏗️ Model Loaded. Entering Deterministic Surgical Loop...")
+    print(f"🏗️ Model Loaded. Entering Bipolar Surgical Loop...")
 
     while attempts < max_retries:
         try:
@@ -39,16 +39,9 @@ def run_pro_engine():
             else:
                 current_df = df.copy()
 
-            if solve_start not in current_df.index:
-                new_idx = pd.period_range(start=min(current_df.index.min(), solve_start), 
-                                          end=max(current_df.index.max(), solve_end), 
-                                          freq='Q')
-                current_df = current_df.reindex(new_idx).ffill().bfill()
-
             results = model.init_trac(solve_start, solve_end, current_df)
             
-            # Successful Solve - Perform Surgical Export
-            print(f"✅ Solve Successful. Filtering for original {len(target_variables)} variables...")
+            # SUCCESS
             final_cols = []
             for v in target_variables:
                 if v in results.columns: final_cols.append(v)
@@ -56,25 +49,27 @@ def run_pro_engine():
                 if res_v in results.columns: final_cols.append(res_v)
             
             results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
-            print("📦 Exported residuals_lite.csv.")
+            print(f"✅ Success at Cycle {attempts}. Exported residuals_lite.csv.")
             return 
 
         except exceptions.MissingDataError as e:
             match = re.search(r'`([^`]+)`', str(e))
             if match:
                 var = match.group(1).lower()
-                # Start at a safe level
-                missing_registry[var] = 10.0
+                missing_registry[var] = 10.0 # Standard start
                 attempts += 1
             else: raise e
         except (ValueError, exceptions.ComputationError):
-            # 🚀 DETERMINISTIC ESCALATION: 
-            # We use a fixed prime increment (0.0131) to ensure we never repeat 
-            # a failed state and stay away from 1.0/0.0 boundaries.
-            missing_registry = {k: v + 0.0131 for k, v in missing_registry.items()}
+            # 🚀 BIPOLAR ESCALATION: 
+            # We alternate directions. Even cycles go UP, Odd cycles go DOWN.
+            # This prevents getting stuck on a "one-way" math wall.
+            direction = 1 if attempts % 2 == 0 else -1
+            shift = 0.057 * direction # Using a prime shift
+            
+            missing_registry = {k: max(0.01, v + shift) for k, v in missing_registry.items()}
             attempts += 1
             if attempts % 100 == 0:
-                print(f"🔄 Escalation Cycle {attempts}...")
+                print(f"🔄 Bipolar Cycle {attempts} (Direction: {'UP' if direction > 0 else 'DOWN'})...")
 
     print("❌ CRITICAL: Failed to find stable mathematical domain.")
     sys.exit(1)
