@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Identity-Aware Engine Started.")
+print("💓 Heartbeat: Identity-Locked Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -36,32 +36,40 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 2. Initialization & Scaling Logic
+    # 2. Initialization & Identity-Lock Logic
     model = frbus.Frbus(model_xml)
     first_actual = df.index.min()
     full_end = df.index.max()
     missing_registry = {}
     
-    # Anchor scaling to Nominal GDP (Standard for late 80s: ~5500)
     gdp_anchor = df['gngdp'].iloc[0] if 'gngdp' in df.columns else 5500
 
-    def get_scaled_proxy(var_name):
-        # 🎯 IDENTITY-AWARE SCALING
+    def get_identity_locked_proxy(var_name):
+        # 🎯 IDENTITY-LOCKED PROXYING
+        
+        # 1. Price Indices: Force to 1.0 (Base-year normalization)
+        if var_name.startswith('p') and not any(x in var_name for x in ['pi', 'ptr']):
+            return 1.0 
+            
+        # 2. Real Quantities: Derive to lock the identity (Real = Nominal if P=1.0)
+        if var_name.startswith('q'):
+            return gdp_anchor * 0.15 
+            
+        # 3. Rates & Gaps
         if any(x in var_name for x in ['r','pi','u','gap','adj','exp']):
-            return 0.05 # 5% for rates/inflation/gaps
-        elif var_name.startswith('k'):
-            return gdp_anchor * 3.1 # Standard Capital-Output Ratio
-        elif var_name.startswith('e'):
-            return gdp_anchor * 0.15 # Standard Expenditure Share
-        elif var_name.startswith('g'):
-            return gdp_anchor * 0.20 # Government Share
+            return 0.05
+            
+        # 4. Capital Stocks (Anchored to scaled GDP)
+        if var_name.startswith('k'):
+            return gdp_anchor * 3.1
+            
         return 0.20
 
     # 3. Persistent Anchor Loop
-    print(f"⚡ Establishing persistent anchor at {first_actual}...")
+    print(f"⚡ Establishing persistent identity-locked anchor at {first_actual}...")
     init_passed = False
     attempts = 0
-    while not init_passed and attempts < 100:
+    while not init_passed and attempts < 150:
         try:
             first_q_results = model.init_trac(first_actual, first_actual, df)
             for col in first_q_results.columns:
@@ -72,7 +80,7 @@ def run_pro_engine():
             match = re.search(r'`([^`]+)`', str(e))
             if match:
                 var = match.group(1).lower()
-                df[var] = get_scaled_proxy(var)
+                df[var] = get_identity_locked_proxy(var)
                 attempts += 1
             else: sys.exit(1)
 
@@ -84,7 +92,7 @@ def run_pro_engine():
         
         window_passed = False
         window_attempts = 0
-        while not window_passed and window_attempts < 50:
+        while not window_passed and window_attempts < 100:
             try:
                 current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                 results = model.init_trac(current_solve_start, current_solve_end, current_df)
@@ -96,8 +104,8 @@ def run_pro_engine():
                 match = re.search(r'`([^`]+)`', str(e))
                 if match:
                     var = match.group(1).lower()
-                    print(f"🛠️  Identity Patch: Scaling {var}...")
-                    missing_registry[var] = get_scaled_proxy(var)
+                    print(f"🛠️  Identity Lock: Seeding {var}...")
+                    missing_registry[var] = get_identity_locked_proxy(var)
                     window_attempts += 1
                 else: window_attempts += 1
 
@@ -107,7 +115,7 @@ def run_pro_engine():
         current_solve_start += 4
             
     # 5. Final Export
-    print(f"🔥 Exporting identity-consistent residuals...")
+    print(f"🔥 Exporting identity-locked residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data)
     results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
