@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Recursive Window Engine Started.")
+print("💓 Heartbeat: Auto-Scaling Window Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -25,7 +25,9 @@ def run_pro_engine():
     
     # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
-    if not files: return
+    if not files:
+        print("❌ No data files found.")
+        return
         
     df = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
@@ -37,36 +39,41 @@ def run_pro_engine():
     df.index = pd.PeriodIndex(df.index, freq='Q')
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
+
+    # 🎯 2. NEW: UNIT ALIGNMENT PRE-CHECK
+    # Detects if variables like HSTART are in units/millions vs billions
+    print("⚖️ Normalizing units for structural consistency...")
+    for col in df.columns:
+        avg_val = df[col].mean()
+        # Scale up if it's a 'Level' variable that is suspiciously small (< 10)
+        is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
+        if avg_val < 10 and not is_rate:
+            print(f"  ⚠️ Auto-scaling {col}: {avg_val:.2f} -> {avg_val * 1000:.2f}")
+            df[col] = df[col] * 1000
     
-    # 2. Initialization
+    # 3. Initialization
     model = frbus.Frbus(model_xml)
     full_start = pd.Period('2006Q1', freq='Q')
     full_end = df.index.max()
 
-    # 3. 🚀 RECURSIVE WINDOWING LOGIC
-    # We solve year-by-year to build a mathematically consistent "state"
+    # 4. Recursive Windowing Logic
     missing_registry = {}
     current_solve_start = full_start
     
-    # If a state exists, load it as the initial seed
     if os.path.exists(state_file):
         with open(state_file, 'r') as f:
             missing_registry = json.load(f)
-        print("💾 Loaded prior state as bootstrap seed.")
-
-    print(f"🏗️ Starting Windowed Solve: {full_start} to {full_end}")
+        print("💾 Loaded cached state as anchor.")
 
     while current_solve_start <= full_end:
-        # Define a 1-year window
         current_solve_end = min(current_solve_start + 3, full_end)
-        print(f"🕒 Current Window: {current_solve_start} to {current_solve_end}")
+        print(f"🕒 Window: {current_solve_start} to {current_solve_end}")
         
         window_attempts = 0
         window_passed = False
         
         while window_attempts < 150:
             try:
-                # Prepare data for this specific window
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
                 
@@ -76,11 +83,10 @@ def run_pro_engine():
                                               end=max(current_df.index.max(), full_end), freq='Q')
                     current_df = current_df.reindex(new_idx).ffill().bfill()
 
-                # Attempt window solve
+                # Solve window
                 results = model.init_trac(current_solve_start, current_solve_end, current_df)
                 
-                # 🔥 CAPTURE STATE: Update registry with the end-of-window values
-                # This "hot-starts" the next year with mathematically legal values
+                # Update registry with final period values of the window
                 for col in results.columns:
                     if col not in target_variables:
                         missing_registry[col] = float(results[col].iloc[-1])
@@ -92,35 +98,33 @@ def run_pro_engine():
                 match = re.search(r'`([^`]+)`', str(e))
                 if match:
                     var = match.group(1).lower()
-                    missing_registry[var] = 0.05 if any(x in var for x in ['r','pi','u']) else 100.0
+                    # Smart Start: Rates small, Levels anchored to scaled data avg
+                    missing_registry[var] = 0.05 if any(x in var for x in ['r','pi','u']) else 1000.0
                 window_attempts += 1
             except (ValueError, exceptions.ComputationError):
-                # Apply localized jitter to break window singularities
-                jitter = 1.0 + (np.random.randn() * 0.01)
+                # Oscillation Jitter to break singularities
+                jitter = 1.0 + (np.sin(window_attempts) * 0.02)
                 missing_registry = {k: v * jitter for k, v in missing_registry.items()}
                 window_attempts += 1
 
         if not window_passed:
-            print(f"❌ Window {current_solve_start} failed to stabilize.")
+            print(f"❌ Structural fail at window {current_solve_start}. Limit reached.")
             sys.exit(1)
         
-        current_solve_start += 4 # Move to the next year
+        current_solve_start += 4
             
-    # 4. FINAL FULL SOLVE
-    print("🔥 All windows passed. Executing final full-period solve...")
+    # 5. Final Full Solve & Surgical Export
+    print("🔥 Executing final full-period residuals calculation...")
     patch_df = pd.DataFrame(missing_registry, index=df.index)
-    final_df = pd.concat([df, patch_df], axis=1)
-    results = model.init_trac(full_start, full_end, final_df)
+    results = model.init_trac(full_start, full_end, pd.concat([df, patch_df], axis=1))
     
-    # Save the final winning state
     with open(state_file, 'w') as f:
         json.dump(missing_registry, f)
 
-    # Surgical Export
     final_cols = [v for v in target_variables if v in results.columns]
     final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
     results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
-    print("✅ Full solve successful. Exported residuals_lite.csv")
+    print("✅ Build Successful. Residuals saved.")
 
 if __name__ == "__main__":
     try:
