@@ -1,4 +1,4 @@
-import pd as pd
+import pandas as pd
 import os
 import numpy as np
 from pyfrbus import frbus
