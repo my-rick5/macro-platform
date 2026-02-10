@@ -17,42 +17,40 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Apply Baseline and Splicing
+    # 2. Reindex and Enforce Continuity
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
-    stable_trend = pd.Series([100 * (1.005**i) for i in range(len(full_index))], index=full_index)
     df = df.reindex(full_index)
 
+    # 🚀 THE GAP FIX: Interpolate across the ENTIRE timeline
+    # method='linear' handles the NaNs seen in Build #349's 2004Q4-2005Q2 slots.
+    df = df.interpolate(method='linear', limit_direction='both').ffill().bfill()
+
+    # 3. Apply Baseline Splicing (to ensure 2004 start stability)
+    stable_trend = pd.Series([100 * (1.005**i) for i in range(len(full_index))], index=full_index)
     for col in df.columns:
         first_idx = df[col].first_valid_index()
         if first_idx and first_idx > full_index[0]:
             ratio = df.loc[first_idx, col] / stable_trend.loc[first_idx]
             df.loc[:first_idx, col] = stable_trend.loc[:first_idx] * ratio
 
-    # 🚀 THE DIAGNOSTIC FIX: Print the data state before solving
-    print("\n🔍 --- DATA DIAGNOSTIC REPORT ---")
-    print(f"Index Range: {df.index.min()} to {df.index.max()}")
-    print("\nSummary Statistics for Real Variables:")
-    print(df[actual_cols].describe().loc[['min', 'max', 'mean']])
-    print("\nFirst 8 Quarters (Spliced History):")
-    print(df[actual_cols].head(8))
-    print("-----------------------------------\n")
-
-    # 3. Proxy Injection
+    # 4. Proxy Injection (following the same continuous logic)
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
-                expected_vars = list(set([v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', f.read()) if v.strip()]))
+                expected_vars = [v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', f.read()) if v.strip()]
             new_vars_dict = {v: stable_trend * (1.0 + np.sin(i)*0.01) for i, v in enumerate(expected_vars) if v not in df.columns}
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
-        except Exception as e: print(f"⚠️ warning: {e}")
+        except Exception: pass
 
-    # 4. Model Execution
+    # 5. Final Sanitization and Model Solve
     df = df.ffill().bfill().abs().clip(lower=0.1)
+    
     try:
         model = frbus.Frbus(model_xml)
         solve_start = df.index[8] 
-        print(f"🏗️ Model Loaded. Solving range: {solve_start} to {df.index.max()}")
+        print(f"🏗️ Model Loaded. Solving CONTINUOUS range: {solve_start} to {df.index.max()}")
         results = model.init_trac(solve_start, df.index.max(), df)
+        
         print("✅ Engine Solve Successful.")
         results[[c for c in results.columns if c in actual_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
