@@ -22,7 +22,7 @@ def run_pro_engine():
     
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. XML Scraper with Stationary Noise
+    # 2. XML Scraper with Unit Baselines (Steady State)
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -36,45 +36,49 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
                 new_data = {}
                 for var in missing_vars:
-                    # Logic: Use 1.0 for levels, 0.05 for rates. 
-                    # Add stationary noise so t and t-1 are never the same.
+                    # Logic: 1.0 is the 'neutral' point for logs (log(1)=0)
+                    # Rates at 0.05 (5%)
                     base = 0.05 if any(r in var for r in ['mpt', 'lur', 'pi', 'r']) else 1.0
-                    # Mean + small random variance (jitter)
-                    new_data[var] = base + np.random.normal(0, 0.001, size=len(df))
+                    new_data[var] = [base] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Flat Padding with Jitter
+    # 3. Flat Padding (Deep Buffer)
     df = df.sort_index()
     start_date = df.index.min()
-    padding_dates = [start_date - i for i in range(1, 13)] # Increased to 12 quarters (3 years)
-    
-    # Create padding based on the first real observation value
+    # 12 quarters of history to ensure all deep lags (t-8, t-12) are satisfied
+    padding_dates = [start_date - i for i in range(1, 13)]
     padding_df = pd.DataFrame(index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
+    
+    # Fill padding with the first available value to maintain a flat 'pre-history'
     for col in df.columns:
-        first_val = df[col].iloc[0]
-        # Fill padding with the first value + jitter to keep it stationary but non-zero delta
-        padding_df[col] = first_val + np.random.normal(0, 0.001, size=len(padding_dates))
+        padding_df[col] = df[col].iloc[0]
 
     df = pd.concat([padding_df, df]).sort_index()
     
-    # Final Safety: Clip to 0.01 to ensure logs never see 0 or negatives
+    # FINAL SAFETY: High-floor clip to prevent log divergence
+    # Most FRB/US price indices and levels are stable at 1.0+
     df = df.ffill().bfill().clip(lower=0.01).copy()
 
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
-    print(f"📊 Final Matrix Stats: Min={df.min().min():.4f}, Max={df.max().max():.4f}")
+    print(f"📊 Steady-State Matrix Ready. Range: {df.min().min():.4f} to {df.max().max():.4f}")
 
-    # 4. Engine Solve
+    # 4. Engine Solve with Exception Handling for Solver
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
+        
+        # We specify the calculation range. The padding handles the history.
         results = model.init_trac(start_date, df.index.max(), df)
+        
         print("✅ Engine Solve Successful.")
         results.to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # Identify if any specific series are causing the NaN/Log error
+        # by checking for extreme values in the result of the last failed op
         raise
 
 if __name__ == "__main__":
