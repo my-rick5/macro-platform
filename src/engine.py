@@ -21,14 +21,18 @@ def run_pro_engine():
         data_frames.append(tmp.set_index('date'))
     
     df = pd.concat(data_frames, axis=1).sort_index()
-    actual_data_cols = [c.lower() for c in df.columns]
+    
+    # CASE-SENSITIVITY FIX: Force everything to lowercase immediately
+    df.columns = [c.lower() for c in df.columns]
+    actual_data_cols = list(df.columns)
 
-    # 2. XML Scraper: Strategic Baseline Injection
+    # 2. XML Scraper: Identify missing variables based on lowercase map
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
                 content = f.read()
             
+            # Scrape model names and normalize
             found_vars = re.findall(r'<name>(.*?)</name>', content)
             expected_vars = list(set([v.strip().lower() for v in found_vars if v.strip()]))
             missing_vars = [v for v in expected_vars if v not in actual_data_cols]
@@ -37,7 +41,7 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Stabilize with policy-neutral values
+                    # Maintain the stable baselines we established
                     if any(x in var for x in ['pitarg', 'targ', 'pi']): base = 2.0
                     elif any(x in var for x in ['tr', 'tax', 'rt']): base = 0.15
                     elif any(x in var for x in ['gr', 'gc', 'gi', 'gx', 'gd', 'hgp']): base = 2000.0
@@ -49,10 +53,10 @@ def run_pro_engine():
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. History Padding & Robust Floor
+    # 3. History Padding
     df = df.sort_index()
-    start_date = df.index.min()
-    padding_dates = [start_date - i for i in range(1, 13)]
+    start_date = df.index.max() - 20 # Ensure we have enough history buffer
+    padding_dates = [df.index.min() - i for i in range(1, 13)]
     padding_df = pd.DataFrame(index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
     
     for col in df.columns:
@@ -61,27 +65,27 @@ def run_pro_engine():
     df = pd.concat([padding_df, df]).sort_index()
     df = df.ffill().bfill().clip(lower=0.01).copy()
 
-    # 4. Engine Solve with Identity Neutralization
+    # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         
-        # We perform the trace calculation
-        results = model.init_trac(start_date, df.index.max(), df)
+        # Run trace. Start date is based on your actual data start.
+        solve_start = pd.PeriodIndex(data_frames[0].index, freq='Q').min()
+        results = model.init_trac(solve_start, df.index.max(), df)
         
-        # KEY FIX: If a dummy residual causes a math error, we can't 'catch' it inside 
-        # init_trac easily, but we can ensure the solver doesn't diverge by 
-        # only exporting the residuals for your verified data.
-        final_results = results[[c for c in results.columns if c.lower() in actual_data_cols or any(x in c.lower() for x in actual_data_cols)]]
+        # Filter output to your core 15 variables (plus their residuals)
+        # Using case-insensitive match for safety
+        mask = [c for c in results.columns if c.lower() in actual_data_cols or any(x in c.lower() for x in actual_data_cols)]
+        final_results = results[mask]
         
         print("✅ Engine Solve Successful.")
         final_results.to_csv(os.path.join(results_dir, "residuals.csv"))
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # One last check for NaN contamination in the matrix itself
-        nans = df.isna().sum().sum()
-        print(f"🔍 Matrix Health: {nans} NaNs found.")
+        # Identify if 'lur' is actually in the final dataframe
+        print(f"🔍 Final Check: Is 'lur' in DF? {'lur' in df.columns}")
         raise
 
 if __name__ == "__main__":
