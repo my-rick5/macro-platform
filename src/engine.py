@@ -24,13 +24,19 @@ def run_pro_engine():
     # Ensure XGAP exists
     if 'GAP' in df.columns: df['XGAP'] = df['GAP']
 
-    # FIX: Inject missing dmptmax variable (usually safe to initialize at 0.0)
-    if 'dmptmax' not in df.columns:
-        print("⚠️  Warning: 'dmptmax' missing from data. Initializing with 0.0")
-        df['dmptmax'] = 0.0
-
     # Use the absolute path we established in Jenkins
     model = Frbus("/home/spark/models/model.xml")
+
+    # --- AUTO-FILL MISSING VARIABLES ---
+    # Combine all variables the model expects (endogenous and exogenous)
+    required_vars = set(model.endo_names) | set(model.exo_names)
+    missing_vars = [v for v in required_vars if v not in df.columns]
+
+    if missing_vars:
+        print(f"⚠️  Filling {len(missing_vars)} missing variables with 0.0 (e.g., {missing_vars[:5]}...)")
+        for var in missing_vars:
+            df[var] = 0.0
+    # -----------------------------------    
 
     print("⚖️  Solving for Tracking Residuals (e)...")
     
