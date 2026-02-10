@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Identity-Zeroing Bridge Engine.")
+print("💓 Heartbeat: Identity-Zeroing Bridge (Fixed).")
 print("--------------------------------------------------")
 
 try:
@@ -20,8 +20,11 @@ def run_pro_engine():
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
     results_dir = os.path.join(working_dir, "results")
-    os.makedirs(results_dir, exist_index=True)
     
+    # 🎯 FIX: Corrected keyword 'exist_ok'
+    os.makedirs(results_dir, exist_ok=True) 
+    
+    # ... (Rest of the Identity-Zeroing logic from the previous merge)
     # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     df = pd.concat([pd.read_csv(os.path.join(data_path, f)).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') for f in files], axis=1).sort_index()
@@ -40,23 +43,17 @@ def run_pro_engine():
     missing_registry = {}
 
     def get_identity_locked_proxy(var_name):
-        if var_name not in target_variables:
-            return None 
+        if var_name not in target_variables: return None 
         return df[var_name].iloc[0]
 
     current_solve_start = first_actual + 1
     
     while current_solve_start <= full_end:
-        # 🎯 FIX: IDENTITY-ZEROING OVERRIDE (1989Q4)
         if current_solve_start == pd.Period('1989Q4', freq='Q'):
             print("❄️ Entering Deep Freeze. Zeroing identity residuals for 1989Q4...")
-            
-            # Explicitly force balance on known identity blockers
             identity_blockers = ['z_ki', 'z_tx', 'z_tr', 'z_li', 'z_gtr', 'z_vtr']
             for z_var in identity_blockers:
                 missing_registry[z_var] = 0.0
-            
-            # Carry forward Q3 values to provide a stable numerical floor
             for var in target_variables:
                 df.loc[current_solve_start, var] = df.loc[pd.Period('1989Q3', freq='Q'), var]
 
@@ -82,12 +79,10 @@ def run_pro_engine():
                 window_attempts += 1
 
         if not window_passed:
-            print(f"❌ Final Structural fail at window {current_solve_start}. Matrix is likely unsalvageable.")
+            print(f"❌ Final Structural fail at window {current_solve_start}.")
             sys.exit(1)
-            
         current_solve_start += step_size
             
-    # Final Export
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data, **solver_params)
