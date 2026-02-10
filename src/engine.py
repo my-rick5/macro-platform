@@ -21,36 +21,33 @@ def run_pro_engine():
     full_index = pd.period_range(start='2000Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. Log-Safe Variable Patching
+    # 3. 🚀 THE ENTROPY PATCH:
     try:
         model = frbus.Frbus(model_xml)
         all_vars = model.vars if hasattr(model, 'vars') else re.findall(r'<name>(.*?)</name>', open(model_xml).read())
         missing_vars = set(v.strip().lower() for v in all_vars) - set(df.columns)
         
         if missing_vars:
-            print(f"📦 Patching {len(missing_vars)} missing variables with Log-Safe Base...")
-            patch = {v: 100.0 for v in missing_vars}
+            print(f"📦 Patching {len(missing_vars)} variables with unique jitter...")
+            # We add a unique increment (0.01 * i) to every variable.
+            # This 'breaks symmetry' in the Jacobian to prevent resid = nan.
+            patch = {v: 100.0 + (i * 0.01) for i, v in enumerate(missing_vars)}
             df = pd.concat([df, pd.DataFrame(patch, index=df.index)], axis=1)
     except Exception as e:
         print(f"⚠️ Discovery failed: {e}")
 
-    # 4. 🚀 THE GLOBAL CONFIG FIX:
-    # Since solve() rejects solver_opts, we set the damping factor globally 
-    # if the attribute exists, or use a smaller initial step by reducing scale.
+    # 4. Engine Execution
     try:
         solve_start_date = pd.Period('2006Q1', freq='Q')
         solve_end_date = df.index.max()
-        
-        print(f"🏗️ Model Loaded. Solving with Global Stability Config...")
-        
-        # We manually update the model's internal solver configuration if accessible
+        print(f"🏗️ Model Loaded. Solving with Numerical Entropy...")
+
         if hasattr(model, 'solver_options'):
             model.solver_options['factor'] = 0.1
             
-        # 5. Execute Solve
         baseline_df = model.solve(solve_start_date, solve_end_date, df)
         
-        # 6. Tracking Overlay
+        # 5. Tracking Overlay
         for col in actual_cols:
             if col in baseline_df.columns:
                 scale_factor = baseline_df.loc[solve_start_date, col] / (df.loc[solve_start_date, col] or 1.0)
