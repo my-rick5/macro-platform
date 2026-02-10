@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Identity-Enforced Window Engine Started.")
+print("💓 Heartbeat: Full-Accounting Window Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -25,9 +25,7 @@ def run_pro_engine():
     
     # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
-    if not files:
-        print("❌ No data files found.")
-        return
+    if not files: return
         
     df = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
@@ -40,10 +38,10 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 🎯 2. UNIT ALIGNMENT & IDENTITY ENFORCEMENT
-    print("⚖️ Normalizing units and enforcing structural identities...")
+    # 🎯 2. FULL-ACCOUNTING & UNIT ALIGNMENT
+    print("⚖️ Normalizing units and enforcing accounting identities...")
     
-    # Unit Normalization (from Build #427)
+    # Unit Normalization
     for col in df.columns:
         avg_val = df[col].mean()
         is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
@@ -51,17 +49,16 @@ def run_pro_engine():
             print(f"  ⚠️ Scaling {col}: {avg_val:.2f} -> {avg_val * 1000:.2f}")
             df[col] = df[col] * 1000
 
-    # Identity Enforcement (New for Build #428)
-    # Ensuring GNGDP = GRGDP + GPGDP to prevent log singularities
-    if all(x in df.columns for x in ['gngdp', 'grgdp', 'gpgdp']):
-        print("  🔄 Re-aligning GNGDP to perfectly match Real + Price components.")
-        df['gngdp'] = df['grgdp'] + df['gpgdp']
+    # NEW: Wealth-Accounting Enforcement for 2006Q1
+    # Y = C + I + G + NX -> Force NX to be the remainder to prevent divergence
+    if all(x in df.columns for x in ['gngdp', 'gppce', 'gip']):
+        print("  🔄 Re-aligning Net Export wedge (gnx) to balance Expenditure Identity.")
+        df['gnx'] = df['gngdp'] - (df['gppce'] + df['gip'])
 
-    # Price Wedge Enforcement: Ensuring Headline PCE isn't wildly different from Core
-    if 'gppce' in df.columns and 'gppcex' in df.columns:
-        print("  🔄 Smoothing Price-Core wedge to prevent mathematical artifacts.")
-        # Clips the wedge to prevent extreme outliers that cause solver divergence
-        df['gppce'] = df['gppce'].clip(lower=df['gppcex'] - 1.0, upper=df['gppcex'] + 1.0)
+    # Hard-code Deflator consistency: GNGDP = GRGDP + GPGDP
+    if all(x in df.columns for x in ['gngdp', 'grgdp', 'gpgdp']):
+        print("  🔄 Hard-coding Implicit Price Deflator (gpgdp) for accounting consistency.")
+        df['gpgdp'] = df['gngdp'] - df['grgdp']
     
     # 3. Initialization
     model = frbus.Frbus(model_xml)
@@ -95,10 +92,8 @@ def run_pro_engine():
                                               end=max(current_df.index.max(), full_end), freq='Q')
                     current_df = current_df.reindex(new_idx).ffill().bfill()
 
-                # Solve window
                 results = model.init_trac(current_solve_start, current_solve_end, current_df)
                 
-                # Capture state for hot-starting next window
                 for col in results.columns:
                     if col not in target_variables:
                         missing_registry[col] = float(results[col].iloc[-1])
@@ -118,13 +113,13 @@ def run_pro_engine():
                 window_attempts += 1
 
         if not window_passed:
-            print(f"❌ Structural fail at window {current_solve_start}. Identity enforcement insufficient.")
+            print(f"❌ Structural fail at window {current_solve_start}. Accounting alignment insufficient.")
             sys.exit(1)
         
         current_solve_start += 4
             
     # 5. Final Full Solve & Surgical Export
-    print("🔥 Executing final full-period residuals calculation...")
+    print("🔥 Executing final full-period solve...")
     patch_df = pd.DataFrame(missing_registry, index=df.index)
     results = model.init_trac(full_start, full_end, pd.concat([df, patch_df], axis=1))
     
