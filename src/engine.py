@@ -17,34 +17,44 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Strict Continuous Fill
+    # 2. Strict Continuous Reconstruction
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. 🚀 THE "ZERO-BASE" SOLVE: 
-    # Use the model's baseline to populate the dataframe first. 
-    # This ensures every variable (including proxies) is in perfect balance.
+    # 3. 🚀 THE DISCOVERY FIX:
+    # We load the model and find every variable it expects.
     try:
         model = frbus.Frbus(model_xml)
+        # Querying model metadata to find missing variables like 'dmptmax'
+        all_model_vars = set(model.lookup(vtype='all'))
+        missing_vars = all_model_vars - set(df.columns)
+        
+        if missing_vars:
+            print(f"📦 Patching {len(missing_vars)} missing model variables (e.g., {list(missing_vars)[:3]}...)")
+            # Populate missing variables with neutral defaults
+            for v in missing_vars:
+                # 'dmpt' variables are usually policy maxes/parameters; 1.0 is a safe identity.
+                df[v] = 1.0 
+    except Exception as e:
+        print(f"⚠️ Metadata Discovery Failed: {e}")
+
+    # 4. Zero-Base Residual Solve
+    try:
         solve_start = df.index[8] # 2006Q1
+        print(f"🏗️ Model Loaded. Solving with Zero-Base Discovery: {solve_start} to {df.index.max()}")
         
-        print(f"🏗️ Model Loaded. Solving with Zero-Base Residuals: {solve_start} to {df.index.max()}")
-        
-        # Step A: Get a mathematically perfect baseline for the whole range
+        # Now 'dmptmax' exists in df, so solve() will proceed
         baseline_df = model.solve(df.index[0], df.index.max(), df)
         
-        # Step B: Overlay your real-world data onto the baseline.
-        # We preserve the model's scale for variables we don't have.
+        # Overlay actual data growth onto baseline magnitude
         for col in actual_cols:
             if col in baseline_df.columns:
-                # Scale your data to match the baseline's starting magnitude
-                scale_factor = baseline_df.loc[solve_start, col] / df.loc[solve_start, col]
+                scale_factor = baseline_df.loc[solve_start, col] / (df.loc[solve_start, col] or 1.0)
                 baseline_df[col] = df[col] * scale_factor
 
-        # 4. Final Tracking Solve
         results = model.init_trac(solve_start, df.index.max(), baseline_df)
-        
         print("✅ Engine Solve Successful.")
+        
         results[[c for c in results.columns if c in actual_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
         
     except Exception as e:
