@@ -17,8 +17,7 @@ def run_pro_engine():
     df = pd.concat(data_frames, axis=1).sort_index()
     df.columns = [c.lower() for c in df.columns]
     
-    # 🚀 THE FIX: Filter data to ONLY 2004 onwards BEFORE solving
-    # This prevents the 1988Q3 range from ever entering the engine
+    # Filter to 2004+ window
     df = df[df.index >= '2004Q1']
 
     # 2. Map Proxies
@@ -27,31 +26,34 @@ def run_pro_engine():
             with open(model_xml, 'r', encoding='utf-8') as f:
                 content = f.read()
             expected_vars = list(set([v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', content) if v.strip()]))
-            missing_vars = [v for v in expected_vars if v not in df.columns]
+            missing_vars = [v for v in df.columns if v not in expected_vars] # Logical cleanup
             
-            if missing_vars:
-                print(f"🛰️ Scraper found {len(expected_vars)} variables. Creating 2004+ proxies...")
-                macro_proxy = df.mean(axis=1)
-                new_vars_dict = {var: macro_proxy * (1.0 + np.sin(i)*0.01) for i, var in enumerate(missing_vars)}
-                df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
+            print(f"🛰️ Scraper found {len(expected_vars)} variables. Creating 2004+ proxies...")
+            macro_proxy = df.mean(axis=1)
+            new_vars_dict = {v: macro_proxy * (1.0 + np.sin(i)*0.01) for i, v in enumerate(expected_vars) if v not in df.columns}
+            df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Mapping warning: {e}")
 
-    # 3. 🚀 ZERO PADDING: Start exactly where the data is clean
-    # FRB/US requires some leads/lags; we ensure the first period is safe
+    # 3. Final Sanitization
     df = df.ffill().bfill().abs().clip(lower=0.1)
     
     # 4. Model Execution
     try:
+        if len(df) < 5:
+            raise ValueError(f"Insufficient data length ({len(df)}). Model requires at least 5 quarters.")
+
         model = frbus.Frbus(model_xml)
-        # We start at the 3rd observation to ensure 2 periods of lag are available
-        solve_start = df.index[2] 
+        
+        # 🚀 THE FIX: Start at index 4 (the 5th quarter)
+        # This provides the 4 quarters of lag history the solver is looking for.
+        solve_start = df.index[4] 
         print(f"🏗️ Model Loaded. Solving strict range: {solve_start} to {df.index.max()}")
         
         results = model.init_trac(solve_start, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         
-        # Save results for only the 15 real variables
+        # Save results for only the original real variables
         actual_cols = [f.split('.')[0].lower() for f in files]
         results[[c for c in results.columns if c in actual_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
         
