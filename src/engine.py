@@ -18,18 +18,19 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 🚀 UNIQUE IDENTITY JITTER: Ensure no two variables are ever equal
-    # This prevents identities like (A - B) from ever hitting zero
+    # 🚀 STRUCTURAL NOISE: Add random Gaussian noise to prevent perfect identity matches
+    rng = np.random.default_rng(300) # Seed for reproducibility in Build #300
     t = np.arange(len(df))
+    
     for i, col in enumerate(actual_data_cols):
-        # Apply a unique, tiny offset based on variable index
-        unique_offset = 1.0 + (i * 1e-6)
-        df[col] = df[col] * unique_offset * (1.001 ** t)
+        # Base growth + unique offset + 0.01% random noise
+        noise = rng.standard_normal(len(df)) * 0.0001
+        df[col] = df[col] * (1.0 + (i * 1e-6)) * (1.001 ** t) + noise
 
     macro_anchor = df[actual_data_cols].sum(axis=1).mean()
     print(f"📊 Macro Anchor Scale: {macro_anchor:.2f}")
 
-    # 2. Asymmetric Dummy Injection
+    # 2. Noisy Dummy Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -41,11 +42,11 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Unique growth and level offsets for every dummy
                     growth_rate = 1.005 + (i * 0.00005)
-                    # Increased base level to ensure dominance in identities
                     level_fraction = 0.01 + (i * 0.0002)
-                    new_data[var] = macro_anchor * level_fraction * (growth_rate ** t)
+                    # Add unique noise profile to every dummy
+                    dummy_noise = rng.standard_normal(len(df)) * 0.0001
+                    new_data[var] = (macro_anchor * level_fraction * (growth_rate ** t)) + dummy_noise
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
@@ -60,7 +61,6 @@ def run_pro_engine():
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        # Use a slightly damped solver to prevent overshooting the log-boundary
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
