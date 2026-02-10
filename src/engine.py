@@ -17,12 +17,13 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Continuous Reconstruction
-    # We expand the start date slightly earlier to ensure we have 'lead-in' history
-    full_index = pd.period_range(start='2003Q1', end=df.index.max(), freq='Q')
+    # 2. 🚀 THE DEEP HISTORY RECONSTRUCTION:
+    # We expand the start date to 2000Q1 to provide a 6-year history buffer.
+    # This satisfies the 'Index -6' error and any other deep lags.
+    full_index = pd.period_range(start='2000Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. Attribute-Safe Discovery & De-fragmentation
+    # 3. Robust Metadata Discovery
     try:
         model = frbus.Frbus(model_xml)
         all_vars = model.vars if hasattr(model, 'vars') else re.findall(r'<name>(.*?)</name>', open(model_xml).read())
@@ -30,35 +31,32 @@ def run_pro_engine():
         
         if missing_vars:
             print(f"📦 Patching {len(missing_vars)} missing variables...")
-            # Use a dictionary update to avoid the 'DataFrame is highly fragmented' warnings 
             patch = {v: 1.0 for v in missing_vars}
             df = pd.concat([df, pd.DataFrame(patch, index=df.index)], axis=1)
-            
     except Exception as e:
         print(f"⚠️ Discovery failed: {e}")
 
-    # 4. 🚀 THE LAG-SAFE SOLVE
+    # 4. Deep-Lag Solve
     try:
-        # We start the solve at index[4] (2004Q1) to give the solver 
-        # a 4-quarter history buffer for lagged variables.
-        history_buffer = 4 
-        solve_start_date = df.index[history_buffer]
+        # We start the actual solve 24 quarters in (2006Q1).
+        # Everything from 2000Q1 to 2005Q4 serves as the 'Lag History'.
+        solve_start_date = pd.Period('2006Q1', freq='Q')
         solve_end_date = df.index.max()
         
-        print(f"🏗️ Model Loaded. Solving with Lag Buffer: {solve_start_date} to {solve_end_date}")
+        print(f"🏗️ Model Loaded. Solving with Deep Lag History (2000Q1 base)...")
+        print(f"📈 Range: {solve_start_date} to {solve_end_date}")
         
-        # Solving with the required history window to prevent IndexError
+        # Solving with the massive buffer to prevent any IndexError
         baseline_df = model.solve(solve_start_date, solve_end_date, df)
         
-        # 5. Tracking Overlay
-        # We only apply tracking to your target range (2006Q1 onwards)
-        target_start = '2006Q1'
+        # 5. Final Tracking Overlay
+        # Scale your real-world data to match the baseline units
         for col in actual_cols:
             if col in baseline_df.columns:
-                scale_factor = baseline_df.loc[target_start, col] / (df.loc[target_start, col] or 1.0)
+                scale_factor = baseline_df.loc[solve_start_date, col] / (df.loc[solve_start_date, col] or 1.0)
                 baseline_df[col] = df[col] * scale_factor
 
-        results = model.init_trac(target_start, solve_end_date, baseline_df)
+        results = model.init_trac(solve_start_date, solve_end_date, baseline_df)
         print("✅ Engine Solve Successful.")
         
         results[[c for c in results.columns if c in actual_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
