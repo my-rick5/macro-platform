@@ -18,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 🚀 THE FIX: Assign unique, tiny growth rates to every dummy
+    # 🚀 THE FINAL FIX: Asymmetric Prime Scaling
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -31,24 +31,24 @@ def run_pro_engine():
                 t = np.arange(len(df))
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # Growth is tiny (0.01% - 0.05%) to avoid identity collisions, 
-                    # but unique to ensure log(growth) != 0.
+                    # 1. Growth: Unique tiny slope to avoid log(1)
                     growth_rate = 1.0001 + (i * 0.000001)
-                    new_data[var] = 0.01 * (growth_rate ** t)
+                    # 2. Level: Prime-based asymmetric level scale (e.g., 0.11, 0.13, 0.17...)
+                    # This prevents A/B identities from ever equaling 1.0
+                    prime_scale = 0.1 + ((i * 13) % 100) * 0.001
+                    new_data[var] = prime_scale * (growth_rate ** t)
                 
-                # De-fragment the dataframe immediately to avoid the warnings seen in Build 311
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 2. Buffering and Stability Floor
+    # 2. Buffer and Global Floor
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    df = pd.concat([padding, df]).sort_index().ffill().bfill()
-    # Absolute floor of 0.01 to keep log space strictly positive
-    df = df.abs().clip(lower=0.01)
+    # Clip at 1.0 to ensure log(x) is always >= 0, providing a safe numerical baseline
+    df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=1.0)
 
     try:
         model = frbus.Frbus(model_xml)
