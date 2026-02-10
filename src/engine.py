@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Fiscal Release Engine Started.")
+print("💓 Heartbeat: Expectations-Neutral Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -38,6 +38,12 @@ def run_pro_engine():
     model = frbus.Frbus(model_xml)
     solver_params = {'max_iter': 1000, 'tolerance': 1e-3}
     
+    # 🎯 FIX: ADAPTIVE EXPECTATIONS OVERRIDE
+    # Set mc_mode to 0 to decouple 1989Q4 from the 1990 recession forecast
+    if 'mc_mode' not in df.columns:
+        print("🧠 Switching to Adaptive Expectations for transition...")
+        df['mc_mode'] = 0.0  
+    
     if 'mco_mode' not in df.columns:
         df['mco_mode'] = 1.0  
 
@@ -46,13 +52,8 @@ def run_pro_engine():
     missing_registry = {}
     gdp_anchor = df['gngdp'].iloc[0] if 'gngdp' in df.columns else 5500
 
-    # 🎯 FIX: FISCAL RELEASE (IDENTITY CLEARANCE)
     def get_identity_locked_proxy(var_name):
-        # 🛡️ New Rule: Release Fiscal and Tax variables
-        if any(x in var_name for x in ['tx', 'tr', 'vtr', 'gtr', 'tw']):
-            return None 
-            
-        if any(x in var_name for x in ['ki', 'ein', 'li']):
+        if any(x in var_name for x in ['tx', 'tr', 'vtr', 'gtr', 'tw', 'ki', 'ein', 'li']):
             return None 
         if var_name.startswith('p') and not any(x in var_name for x in ['pi', 'ptr']):
             base_val = 1.0 
@@ -64,11 +65,10 @@ def run_pro_engine():
             base_val = gdp_anchor * 3.1
         else:
             base_val = 0.20
-            
         jitter = 1 + (np.random.uniform(-0.0001, 0.0001))
         return base_val * jitter
 
-    # (Anchor Logic remains same)
+    # 3. Anchor logic (Safe Start)
     print(f"⚡ Establishing anchor at {first_actual}...")
     init_passed = False
     attempts = 0
@@ -90,7 +90,7 @@ def run_pro_engine():
                 attempts += 1
             else: attempts += 1
 
-    # 4. Global Recursive Shield (Temporal Compression + Fiscal Release)
+    # 4. Global Recursive Shield (Temporal Compression + Neutrality)
     current_solve_start = first_actual + 1
     while current_solve_start <= full_end:
         if current_solve_start < pd.Period('1991Q1', freq='Q'):
@@ -105,6 +105,8 @@ def run_pro_engine():
         while not window_passed and window_attempts < 100:
             try:
                 current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
+                
+                # Warm-start damping for transition
                 if current_solve_start < pd.Period('1991Q1', freq='Q'):
                     for var in missing_registry:
                         current_df.loc[current_solve_start:current_solve_end, var] = missing_registry[var]
@@ -115,7 +117,7 @@ def run_pro_engine():
                         missing_registry[col] = float(results[col].iloc[-1])
                 window_passed = True
             except Exception as e:
-                match = re.search(r'`([^`]+)`', str(e))
+                match = re.search(r'`([^`]+)`', str(e) or "")
                 if match:
                     var = match.group(1).lower()
                     proxy_val = get_identity_locked_proxy(var)
@@ -127,12 +129,9 @@ def run_pro_engine():
             print(f"❌ Structural fail at window {current_solve_start}.")
             sys.exit(1)
         
-        if current_solve_start < pd.Period('1991Q1', freq='Q'):
-            current_solve_start += 1
-        else:
-            current_solve_start += 4
+        current_solve_start += 1 if current_solve_start < pd.Period('1991Q1', freq='Q') else 4
             
-    print("🔥 Exporting residuals...")
+    print("🔥 Exporting stabilized residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data, **solver_params)
     results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
