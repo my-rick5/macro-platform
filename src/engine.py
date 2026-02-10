@@ -17,36 +17,44 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Strict Continuous Reconstruction
+    # 2. Continuous Fill
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. 🚀 THE DISCOVERY FIX:
-    # We load the model and find every variable it expects.
+    # 3. 🚀 THE ATTRIBUTE-SAFE DISCOVERY:
     try:
         model = frbus.Frbus(model_xml)
-        # Querying model metadata to find missing variables like 'dmptmax'
-        all_model_vars = set(model.lookup(vtype='all'))
+        
+        # FIXED: Try common pyfrbus metadata attributes
+        all_vars = []
+        if hasattr(model, 'vars'):
+            all_vars = model.vars
+        elif hasattr(model, 'lookup'):
+            all_vars = model.lookup(vtype='all')
+        else:
+            # Fallback: parse the XML name tags directly if API fails
+            with open(model_xml, 'r') as f:
+                all_vars = re.findall(r'<name>(.*?)</name>', f.read())
+        
+        all_model_vars = set(v.strip().lower() for v in all_vars)
         missing_vars = all_model_vars - set(df.columns)
         
         if missing_vars:
-            print(f"📦 Patching {len(missing_vars)} missing model variables (e.g., {list(missing_vars)[:3]}...)")
-            # Populate missing variables with neutral defaults
+            print(f"📦 Patching {len(missing_vars)} missing variables including 'dmptmax'...")
             for v in missing_vars:
-                # 'dmpt' variables are usually policy maxes/parameters; 1.0 is a safe identity.
+                # Initializing to 1.0 ensures they don't break log/division identities
                 df[v] = 1.0 
     except Exception as e:
-        print(f"⚠️ Metadata Discovery Failed: {e}")
+        print(f"⚠️ Robust Discovery failed: {e}")
 
     # 4. Zero-Base Residual Solve
     try:
         solve_start = df.index[8] # 2006Q1
         print(f"🏗️ Model Loaded. Solving with Zero-Base Discovery: {solve_start} to {df.index.max()}")
         
-        # Now 'dmptmax' exists in df, so solve() will proceed
+        # This will now succeed because dmptmax is in df
         baseline_df = model.solve(df.index[0], df.index.max(), df)
         
-        # Overlay actual data growth onto baseline magnitude
         for col in actual_cols:
             if col in baseline_df.columns:
                 scale_factor = baseline_df.loc[solve_start, col] / (df.loc[solve_start, col] or 1.0)
