@@ -10,7 +10,7 @@ def run_pro_engine():
     results_dir = "/home/spark/results"
     os.makedirs(results_dir, exist_ok=True)
     
-    # 1. Load Data
+    # 1. Load and Normalize
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
     data_frames = [pd.read_csv(os.path.join(data_path, f)).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') for f in files]
@@ -18,12 +18,10 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # ECONOMIST'S ANCHOR: Use the sum of real data as the magnitude baseline
-    # This ensures dummy components (Consumption/Investment) are smaller than the totals
     macro_anchor = df[actual_data_cols].sum(axis=1).mean()
     print(f"📊 Macro Anchor Scale: {macro_anchor:.2f}")
 
-    # 2. Proportion-Safe Injection
+    # 2. Stochastic Steady-State Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -36,25 +34,26 @@ def run_pro_engine():
                 t = np.arange(len(df))
                 new_data = {}
                 
-                # Balanced Growth Path at 0.5% per quarter
-                master_growth = 1.005 ** t
+                # Seed for reproducibility in Build #290
+                rng = np.random.default_rng(290)
                 
                 for i, var in enumerate(missing_vars):
-                    # Components get a unique fraction of the Macro Anchor (0.01% to 1%)
-                    # This guarantees that Total (Anchor) - Component is always positive
-                    level_fraction = 0.0001 + (i * 0.00002)
-                    new_data[var] = macro_anchor * level_fraction * master_growth
+                    # Every variable gets a unique growth jitter (e.g., 0.49% to 0.51%)
+                    # This prevents 'divide by zero' by ensuring no two variables scale identically.
+                    jittered_growth = (1.005 + rng.uniform(-0.0001, 0.0001)) ** t
+                    
+                    # Proportional magnitude remains for overflow protection
+                    level_fraction = 0.001 + (i * 0.00005)
+                    new_data[var] = macro_anchor * level_fraction * jittered_growth
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Buffer and Numerical Floor
+    # 3. Buffer and Floor
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
-    
-    # Clip at 1.0 to ensure log(x) >= 0, providing a safety buffer for identities
     df = pd.concat([padding, df]).sort_index().ffill().bfill().clip(lower=1.0)
 
     try:
