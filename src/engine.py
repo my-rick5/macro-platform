@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Homogeneous Bootstrap Engine Started.")
+print("💓 Heartbeat: Robust-Momentum Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -38,15 +38,19 @@ def run_pro_engine():
     df_raw.columns = [c.lower() for c in df_raw.columns]
     target_variables = list(df_raw.columns)
 
-    # 🎯 2. HOMOGENEOUS BOOTSTRAP BUFFER
+    # 🎯 2. ROBUST DYNAMIC BUFFER (Anti-Infinity)
     first_actual = df_raw.index.min()
     buffer_idx = pd.period_range(start=first_actual - 4, end=first_actual - 1, freq='Q')
     
-    # Calculate the 'Pulse' of your data to seed the buffer
-    avg_growth = df_raw.select_dtypes(include=[np.number]).pct_change().mean().mean()
-    if np.isnan(avg_growth): avg_growth = 0.005 # Default 0.5% if calc fails
+    # FIX: Calculate momentum while handling Inf/NaN spikes
+    growth_series = df_raw.select_dtypes(include=[np.number]).pct_change()
+    avg_growth = growth_series.replace([np.inf, -np.inf], np.nan).mean().mean()
     
-    print(f"📊 Data start: {first_actual}. Seeding 1988 growth momentum at {avg_growth:.4f}")
+    # Clip to +/- 5% to prevent extreme structural shocks
+    avg_growth = np.clip(avg_growth, -0.05, 0.05)
+    if np.isnan(avg_growth): avg_growth = 0.005 
+    
+    print(f"📊 Data start: {first_actual}. Seeding momentum at {avg_growth:.4f} (Clipped)")
     
     buffer_df = pd.DataFrame(index=buffer_idx, columns=df_raw.columns)
     for col in df_raw.columns:
@@ -92,6 +96,7 @@ def run_pro_engine():
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
                 
+                # Check for solve anchor
                 if current_solve_start not in current_df.index:
                     new_idx = pd.period_range(start=min(current_df.index.min(), current_solve_start), 
                                               end=max(current_df.index.max(), full_end), freq='Q')
