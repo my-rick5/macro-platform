@@ -8,7 +8,7 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
-    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(results_dir, exist_index=True)
     
     # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
@@ -17,45 +17,54 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Strict Continuous Reconstruction
+    # 2. Strict Reconstruction (Log-Linear)
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index)
+    
+    # Ensure no zeros before log interpolation
+    df = df.clip(lower=0.01)
+    df = np.exp(np.log(df).interpolate(method='linear')).bfill().ffill()
 
-    # 🚀 THE "NO-HOLE" FIX: 
-    # 1. Backfill first valid obs to 2004Q1 to stabilize the 8-quarter lag buffer.
-    # 2. Log-linear interpolate any gaps within the series.
-    # 3. Apply a strict global floor.
-    df = df.bfill().interpolate(method='linear').ffill()
-    df = df.clip(lower=0.1) 
+    # 3. 🚀 THE PRECISION AUDIT: Find the "Log-Killer"
+    # FRB/US often fails if a value is too small to be used in a denominator.
+    LOG_THRESHOLD = 0.01 
+    critical_failures = []
+    
+    for col in df.columns:
+        zeros = df[df[col] < LOG_THRESHOLD][col]
+        if not zeros.empty:
+            for date, val in zeros.items():
+                critical_failures.append(f"🚩 {col} at {date}: value {val}")
 
-    # 3. Model Variable Synchronization
+    if critical_failures:
+        print("\n⚠️ LOG-DANGER ALERT: Found values likely to cause 'divide by zero in log':")
+        for fail in critical_failures[:10]: # Print first 10
+            print(fail)
+        print(f"...Total danger points found: {len(critical_failures)}\n")
+
+    # 4. Proxy Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
                 expected_vars = [v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', f.read()) if v.strip()]
-            
-            # Ensure every model variable exists in the DF before solve
-            # Dummies follow the median trend of real variables for scaling safety
-            median_trend = df.median(axis=1)
+            median_trend = df.median(axis=1).clip(lower=1.0)
             new_vars_dict = {v: median_trend for v in expected_vars if v not in df.columns}
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception: pass
 
-    # 4. Final Engine Solve
+    # 5. Final Engine Execution
+    # 🚀 SAFETY BUMP: Increase floor to 1.0 to ensure log(x) > 0
+    df = df.abs().clip(lower=1.0)
+    
     try:
         model = frbus.Frbus(model_xml)
-        # Solve from 2006Q1 (Index 8). Lags pull from stabilized 2004-2005 buffer.
         solve_start = df.index[8] 
-        print(f"🏗️ Model Loaded. Solving FULLY-SPLICED range: {solve_start} to {df.index.max()}")
-        
+        print(f"🏗️ Model Loaded. Solving range: {solve_start} to {df.index.max()}")
         results = model.init_trac(solve_start, df.index.max(), df)
         print("✅ Engine Solve Successful.")
-        
         results[[c for c in results.columns if c in actual_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Final diagnostic print to catch any remaining NaNs
-        print(f"NaN Count: {df.isna().sum().sum()}")
         raise
 
 if __name__ == "__main__":
