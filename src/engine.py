@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Global Proxy Engine Started.")
+print("💓 Heartbeat: Recursive Proxy Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -37,19 +37,23 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 🎯 2. GLOBAL PROXY INTERCEPTOR
-    # This provides the mandatory structural series the model is demanding
-    print("📋 Checking for missing structural parameters...")
-    required_proxies = {
-        'dmptmax': 0.35,  # Top marginal tax rate proxy
-        'picorr': 0.02,   # Inflation target anchor
-        'ecoind': 0.0,    # Neutral economic indicator
-        'zlb': 0.0        # Zero lower bound toggle
+    # 🎯 2. RECURSIVE PROXY GENERATOR
+    # This automatically injects mandatory structural series found in Build #443
+    print("📋 Injecting recursive structural proxies...")
+    auto_proxies = {
+        'dmptmax': 0.35,   # Tax rate proxy
+        'picorr': 0.02,    # Inflation anchor
+        'ecoind': 0.0,     # Neutral indicator
+        'zlb': 0.0,        # Zero bound toggle
+        'delrff': 0.0,     # FIX: Change in Fed Funds Rate
+        'rffmin': 0.0,     # Interest rate floor
+        'rffmax': 0.20,    # Interest rate ceiling
+        'delrpc': 0.0      # Change in real consumption
     }
 
-    for var, val in required_proxies.items():
+    for var, val in auto_proxies.items():
         if var not in df.columns:
-            print(f"  🔗 Injecting proxy for {var} at {val}")
+            print(f"  🔗 Injecting {var} at {val}")
             df[var] = val
 
     # 3. UNIT & ACCOUNTING ENFORCEMENT
@@ -81,7 +85,7 @@ def run_pro_engine():
                 missing_registry[col] = float(first_q_results[col].iloc[0])
         print("✅ Isolation Anchor established.")
     except Exception as e:
-        print(f"⚠️ Isolation failed: {e}. Falling back to iterative discovery...")
+        print(f"⚠️ Isolation failed: {e}. Attempting iterative fallback...")
 
     # 6. Recursive Windowing Logic
     current_solve_start = first_actual + 1
