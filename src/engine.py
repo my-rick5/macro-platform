@@ -18,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Unique Growth Injection
+    # 2. Balanced Growth Path Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -30,17 +30,22 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 t = np.arange(len(df))
                 new_data = {}
+                
+                # ECONOMIST'S ANCHOR: All dummies grow at 0.5% per quarter.
+                # This ensures all ratios (dummy_A / dummy_B) are constant.
+                master_growth = 1.005 ** t
+                
                 for i, var in enumerate(missing_vars):
-                    # UNIQUE GROWTH: Every variable gets a distinct growth rate 
-                    # (e.g., 1.005001, 1.005002, etc.) to prevent divide-by-zero singularities.
-                    growth_rate = 1.005 + (i * 1e-7)
-                    new_data[var] = 10000.0 * (growth_rate ** t)
+                    # Level offset: Ensures no two variables are identical (avoids singular Jacobian)
+                    # Magnitude: 10,000 baseline provides massive headroom for identities.
+                    level_offset = 1.0 + (i * 0.001)
+                    new_data[var] = 10000.0 * level_offset * master_growth
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Stability Padding
+    # 3. Buffer and Final Floor
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
@@ -49,6 +54,7 @@ def run_pro_engine():
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
+        # Solve start must align with the beginning of the real data
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
