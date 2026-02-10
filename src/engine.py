@@ -50,8 +50,8 @@ def run_pro_engine():
             print("🚀 1989Q4 Deadlock: Performing Surgical Re-Initialization...")
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
-            # Use 'sim' to bypass Jacobian inversion for the crash window
-            results = model.sim(current_solve_start, current_solve_start, current_df)
+            # Use 'solve' to bypass Jacobian inversion for the crash window
+            results = model.solve(current_solve_start, current_solve_start, current_df, init=true)
             
             for col in results.columns:
                 if col not in target_variables:
