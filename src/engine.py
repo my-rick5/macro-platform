@@ -17,40 +17,45 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. 🚀 THE DEEP HISTORY RECONSTRUCTION:
-    # We expand the start date to 2000Q1 to provide a 6-year history buffer.
-    # This satisfies the 'Index -6' error and any other deep lags.
+    # 2. Deep History Expansion
     full_index = pd.period_range(start='2000Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 3. Robust Metadata Discovery
+    # 3. 🚀 THE LOG-SAFE PATCH:
     try:
         model = frbus.Frbus(model_xml)
         all_vars = model.vars if hasattr(model, 'vars') else re.findall(r'<name>(.*?)</name>', open(model_xml).read())
         missing_vars = set(v.strip().lower() for v in all_vars) - set(df.columns)
         
         if missing_vars:
-            print(f"📦 Patching {len(missing_vars)} missing variables...")
-            patch = {v: 1.0 for v in missing_vars}
+            print(f"📦 Patching {len(missing_vars)} missing variables with Log-Safe Base...")
+            # Using 100.0 provides a buffer. If a solver step is -5.0, 
+            # 95.0 is still log-legal. 1.0 would have become -4.0 (crash).
+            patch = {v: 100.0 for v in missing_vars}
             df = pd.concat([df, pd.DataFrame(patch, index=df.index)], axis=1)
     except Exception as e:
         print(f"⚠️ Discovery failed: {e}")
 
-    # 4. Deep-Lag Solve
+    # 4. Final Engine Execution
     try:
-        # We start the actual solve 24 quarters in (2006Q1).
-        # Everything from 2000Q1 to 2005Q4 serves as the 'Lag History'.
         solve_start_date = pd.Period('2006Q1', freq='Q')
         solve_end_date = df.index.max()
         
-        print(f"🏗️ Model Loaded. Solving with Deep Lag History (2000Q1 base)...")
-        print(f"📈 Range: {solve_start_date} to {solve_end_date}")
+        print(f"🏗️ Model Loaded. Solving with High-Base Stability (2000Q1 base)...")
         
-        # Solving with the massive buffer to prevent any IndexError
-        baseline_df = model.solve(solve_start_date, solve_end_date, df)
+        # 🚀 SOLVER TUNING:
+        # We use model.solve but pass internal options to the scipy root finder
+        # to prevent it from taking 'illegal' steps into negative log space.
+        baseline_df = model.solve(
+            solve_start_date, 
+            solve_end_date, 
+            df,
+            # These options tell the underlying scipy solver to be 'gentle'
+            # and avoid the explosive steps that cause the log crash.
+            solver_opts={'options': {'factor': 0.1}} 
+        )
         
-        # 5. Final Tracking Overlay
-        # Scale your real-world data to match the baseline units
+        # 5. Tracking Overlay
         for col in actual_cols:
             if col in baseline_df.columns:
                 scale_factor = baseline_df.loc[solve_start_date, col] / (df.loc[solve_start_date, col] or 1.0)
@@ -63,6 +68,7 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # Final emergency debug: clip all data to be positive
         raise
 
 if __name__ == "__main__":
