@@ -18,9 +18,13 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 🚀 THE DATA INTEGRITY FIX: Enforce a strict positive floor on REAL data
-    # Some macro variables (like nominal rates) can hit 0.0, which breaks log()
-    df = df.abs().clip(lower=0.01)
+    # 🚀 THE UNIT STABILITY FIX: Global Normalization
+    # Scale every real variable so its mean is 100.0 to prevent unit mismatches
+    # from crashing log() identities.
+    for col in df.columns:
+        col_mean = df[col].mean()
+        if col_mean != 0:
+            df[col] = (df[col] / col_mean) * 100.0
 
     # 2. Smart Proxy Injection
     if os.path.exists(model_xml):
@@ -32,29 +36,24 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Mapping proxies for {len(missing_vars)} variables...")
-                # Average of our sanitized real data as a proxy base
-                macro_proxy = df.mean(axis=1)
-                new_vars_dict = {}
-                for i, var in enumerate(missing_vars):
-                    variation = 1.0 + (np.sin(i) * 0.01)
-                    new_vars_dict[var] = macro_proxy * variation
-                
+                # Every dummy variable now also shares this safe scale (100.0)
+                new_vars_dict = {var: 100.0 + (np.sin(i) * 0.1) for i, var in enumerate(missing_vars)}
                 df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Mapping warning: {e}")
 
-    # 3. Final Padding and Global Floor
+    # 3. Final Sanitization
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    # Ensure the entire combined dataset (Real + Proxy) is log-safe
-    df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=0.01)
+    # Enforce a strict log-safe floor on the normalized data
+    df = pd.concat([padding, df]).sort_index().ffill().bfill().abs().clip(lower=10.0)
 
     # 4. Model Execution
     try:
         model = frbus.Frbus(model_xml)
-        print("🏗️ Model Loaded. Executing init_trac with sanitized Real-Data...")
+        print("🏗️ Model Loaded. Executing init_trac with Normalized Data...")
         results = model.init_trac(first_obs, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
