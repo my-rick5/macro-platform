@@ -23,7 +23,7 @@ def run_pro_engine():
     df = pd.concat(data_frames, axis=1).sort_index()
     actual_data_cols = list(df.columns)
 
-    # 2. XML Scraper with Macro-Scale Defaults
+    # 2. XML Scraper with Domain-Specific Stabilization
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -37,15 +37,18 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # DETERMINISTIC SCALING:
-                    # Level variables (Investment, GDP, Stock) need high values.
-                    # Rates (LUR, PI, R) and Indices (P) need low values.
-                    if any(x in var for x in ['gr', 'gc', 'gi', 'gx', 'gd', 'hgp']): 
-                        base = 2000.0 # Standard nominal scale
-                    elif any(r in var for r in ['mpt', 'lur', 'pi', 'r', 'dr']): 
-                        base = 0.05   # 5% rate
+                    # NEW POLICY LOGIC:
+                    # Inflation targets and tax rates need specific non-zero baselines
+                    if any(x in var for x in ['pitarg', 'targ', 'pi']): 
+                        base = 2.0  # 2% Inflation Target
+                    elif any(x in var for x in ['tr', 'tax', 'rt']): 
+                        base = 0.15 # 15% Tax/Transfer Ratio
+                    elif any(x in var for x in ['gr', 'gc', 'gi', 'gx', 'gd', 'hgp', 'expenditures']): 
+                        base = 2000.0 # Nominal Levels
+                    elif any(r in var for r in ['mpt', 'lur', 'r', 'dmpt']): 
+                        base = 0.05  # Standard Rates
                     else: 
-                        base = 1.0    # Price index baseline
+                        base = 1.0   # General Baseline
                     
                     new_data[var] = [base + (i * 1e-7)] * len(df)
                 
@@ -53,18 +56,7 @@ def run_pro_engine():
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Global Level-Correction for Core Series
-    # Any core series identified in the crash (GRBF, GRGOVF, GRRES, GIP) 
-    # that is currently at a 'growth rate' scale needs to be shifted to 'level' scale
-    # if the model treats it as a nominal/real flow.
-    for col in df.columns:
-        if any(x in col.lower() for x in ['gr', 'gip', 'hgp']):
-            if df[col].max() < 100.0:
-                # If it's low, it's likely being misinterpreted as a rate. 
-                # We boost it to the billion-dollar floor.
-                df[col] = df[col].clip(lower=1000.0)
-
-    # 4. Deep History Padding
+    # 3. History Padding & Robust Floor
     df = df.sort_index()
     start_date = df.index.min()
     padding_dates = [start_date - i for i in range(1, 13)]
@@ -74,26 +66,28 @@ def run_pro_engine():
         padding_df[col] = df[col].iloc[0]
 
     df = pd.concat([padding_df, df]).sort_index()
-    df = df.ffill().bfill().clip(lower=0.001).copy()
+    
+    # Significant floor increase for policy variables to prevent log(0)
+    df = df.ffill().bfill().clip(lower=0.01).copy()
 
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
 
-    # 5. Final Attempt at Engine Solve
+    # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         results = model.init_trac(start_date, df.index.max(), df)
         
-        # Output only the residuals for the user's actual 15 variables
         final_results = results[[c for c in results.columns if any(x in c for x in actual_data_cols)]]
         print("✅ Engine Solve Successful.")
         final_results.to_csv(os.path.join(results_dir, "residuals.csv"))
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Final diagnostic sweep
-        low_vars = df.columns[(df.iloc[-1] < 1.0)].tolist()[:10]
-        print(f"🔍 Diagnostic: Remaining low-value variables: {low_vars}")
+        # Print values of the specific culprits from #251
+        culprits = ['pitarg', 'trcit', 'rgw', 'dmptpi']
+        available = [c for c in culprits if c in df.columns]
+        print(f"🔍 Culprit Values: {df[available].iloc[-1].to_dict()}")
         raise
 
 if __name__ == "__main__":
