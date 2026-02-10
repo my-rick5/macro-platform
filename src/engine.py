@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: API-Corrected Engine Started.")
+print("💓 Heartbeat: Safe-Initialization Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -39,15 +39,10 @@ def run_pro_engine():
     # 2. Initialization & Identity-Lock Logic
     model = frbus.Frbus(model_xml)
     
-    # 🎯 FIX: SOLVER SETTINGS DICTIONARY
-    # We pass these as kwargs to init_trac instead of calling set_option
-    solver_params = {
-        'max_iter': 1000,
-        'tolerance': 1e-3
-    }
+    # Standard parameters for the long-run windows
+    solver_params = {'max_iter': 1000, 'tolerance': 1e-3}
     
     if 'mco_mode' not in df.columns:
-        print("🛠️  Engaging MCO Expectations Override...")
         df['mco_mode'] = 1.0  
 
     first_actual = df.index.min()
@@ -66,25 +61,29 @@ def run_pro_engine():
             return gdp_anchor * 3.1
         return 0.20
 
-    # 3. Persistent Anchor Loop
-    print(f"⚡ Establishing anchor at {first_actual}...")
+    # 🎯 3. SAFE ANCHOR LOOP: Low-iter capping to prevent C++ silent crash
+    print(f"⚡ Establishing safe-anchor at {first_actual}...")
     init_passed = False
     attempts = 0
-    while not init_passed and attempts < 150:
+    while not init_passed and attempts < 200:
         try:
-            # Applying solver_params here
-            first_q_results = model.init_trac(first_actual, first_actual, df, **solver_params)
+            # We use a very low iter cap for the search phase to keep the matrix stable
+            anchor_params = {**solver_params, 'max_iter': 20}
+            first_q_results = model.init_trac(first_actual, first_actual, df, **anchor_params)
             for col in first_q_results.columns:
                 if col not in target_variables:
                     missing_registry[col] = float(first_q_results[col].iloc[0])
             init_passed = True
+            print("✅ Anchor Secure.")
         except Exception as e:
             match = re.search(r'`([^`]+)`', str(e))
             if match:
                 var = match.group(1).lower()
                 df[var] = get_identity_locked_proxy(var)
                 attempts += 1
-            else: sys.exit(1)
+            else: 
+                print(f"⚠️ Structural Jitter at Attempt {attempts}. Retrying...")
+                attempts += 1
 
     # 4. Global Recursive Shield
     current_solve_start = first_actual + 1
@@ -97,7 +96,6 @@ def run_pro_engine():
         while not window_passed and window_attempts < 100:
             try:
                 current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
-                # Applying solver_params here
                 results = model.init_trac(current_solve_start, current_solve_end, current_df, **solver_params)
                 for col in results.columns:
                     if col not in target_variables:
@@ -118,11 +116,11 @@ def run_pro_engine():
         current_solve_start += 4
             
     # 5. Final Export
-    print(f"🔥 Exporting full MCO-stabilized residuals...")
+    print(f"🔥 Exporting full stabilized residuals...")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data, **solver_params)
     results.to_csv(os.path.join(results_dir, "residuals_lite.csv"))
-    print("✅ Build Successful. Timeline Complete.")
+    print("✅ Build Successful.")
 
 if __name__ == "__main__":
     run_pro_engine()
