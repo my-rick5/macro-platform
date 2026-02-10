@@ -21,39 +21,40 @@ def run_pro_engine():
     start_date = df_overlap.index.min() if not df_overlap.empty else df.index.min()
     end_date = df_overlap.index.max() if not df_overlap.empty else df.index.max()
 
-    # 3. THE FIX: Policy & Target Mapping
-    # dmptmax = Inflation target
-    # delrff = Federal Funds Rate
-    # dmptlur = Unemployment target (NAIRU)
-    required_vars = {
-        'dmptmax': 2.0,
-        'delrff': 3.0,
-        'dmptlur': 4.8  
-    }
-    
-    for var, default_val in required_vars.items():
-        if var not in df.columns:
-            print(f"⚠️  Injecting missing model variable: {var} (defaulting to {default_val})")
-            df[var] = default_val
-
-    # 4. Global Cleanup
-    # Ensure no NaN gaps exist for shorter series like GPPCE
-    df = df.ffill().bfill().fillna(0.0)
-
-    print(f"\n📊 --- MASTER DATA MATRIX ---")
-    print(f"Total Shape: {df.shape}")
-    print(f"Timeline: {start_date} to {end_date}")
-    
-    # 5. Initialize and Solve
+    # 3. Initialize Model and DYNAMICALLY Inject Missing Data
     try:
         model = frbus.Frbus("/home/spark/models/model.xml")
         print("🏗️  Model XML Loaded Successfully.")
         
+        # Get list of variables the model expects
+        expected_vars = model.varnames
+        missing_vars = [v for v in expected_vars if v not in df.columns]
+        
+        if missing_vars:
+            print(f"⚠️  Injecting {len(missing_vars)} missing variables with defaults...")
+            for var in missing_vars:
+                # Basic logic: Policy targets usually 2-4, residuals usually 0
+                if 'dmpt' in var:
+                    df[var] = 2.0  # Target defaults
+                elif 'delrff' in var:
+                    df[var] = 3.0  # Interest rate default
+                else:
+                    df[var] = 0.0  # Neutral default for everything else
+        
+        # 4. Final Data Clean-up
+        df = df.ffill().bfill().fillna(0.0)
+
+        print(f"\n📊 --- MASTER DATA MATRIX ---")
+        print(f"Total Shape: {df.shape}")
+        print(f"Timeline: {start_date} to {end_date}")
+        
+        # 5. The Solve (Calculating Residuals)
         results = model.init_trac(start_date, end_date, df)
-        print("✅ Engine Solve Successful.")
+        print("✅ Engine Solve Successful. Residuals calculated.")
         
         os.makedirs("/home/spark/results", exist_ok=True)
         results.to_csv("/home/spark/results/residuals.csv")
+        
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
         raise
