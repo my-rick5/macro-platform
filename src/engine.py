@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Full-Accounting Window Engine Started.")
+print("💓 Heartbeat: Cold-Start Window Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -27,53 +27,52 @@ def run_pro_engine():
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
         
-    df = pd.concat([
+    df_raw = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
         .assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q'))
         .set_index('date') 
         for f in files
     ], axis=1).sort_index()
     
-    df.index = pd.PeriodIndex(df.index, freq='Q')
-    df.columns = [c.lower() for c in df.columns]
-    target_variables = list(df.columns)
+    df_raw.index = pd.PeriodIndex(df_raw.index, freq='Q')
+    df_raw.columns = [c.lower() for c in df_raw.columns]
+    target_variables = list(df_raw.columns)
 
-    # 🎯 2. FULL-ACCOUNTING & UNIT ALIGNMENT
-    print("⚖️ Normalizing units and enforcing accounting identities...")
+    # 🎯 2. COLD-START BUFFER (Prepending 2005)
+    print("❄️ Prepending 4-quarter buffer (2005Q1-Q4) to stabilize lags...")
+    first_actual = df_raw.index.min()
+    buffer_idx = pd.period_range(start=first_actual - 4, end=first_actual - 1, freq='Q')
+    buffer_df = pd.DataFrame(index=buffer_idx, columns=df_raw.columns)
     
-    # Unit Normalization
+    for col in df_raw.columns:
+        buffer_df[col] = df_raw[col].iloc[0] # Flat-line 2006Q1 values backward
+    
+    df = pd.concat([buffer_df, df_raw]).sort_index()
+
+    # 3. UNIT & ACCOUNTING ENFORCEMENT (On the buffered dataset)
+    print("⚖️ Normalizing units and enforcing accounting on buffer start...")
     for col in df.columns:
         avg_val = df[col].mean()
         is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
         if avg_val < 10 and not is_rate:
-            print(f"  ⚠️ Scaling {col}: {avg_val:.2f} -> {avg_val * 1000:.2f}")
             df[col] = df[col] * 1000
 
-    # NEW: Wealth-Accounting Enforcement for 2006Q1
-    # Y = C + I + G + NX -> Force NX to be the remainder to prevent divergence
     if all(x in df.columns for x in ['gngdp', 'gppce', 'gip']):
-        print("  🔄 Re-aligning Net Export wedge (gnx) to balance Expenditure Identity.")
         df['gnx'] = df['gngdp'] - (df['gppce'] + df['gip'])
 
-    # Hard-code Deflator consistency: GNGDP = GRGDP + GPGDP
     if all(x in df.columns for x in ['gngdp', 'grgdp', 'gpgdp']):
-        print("  🔄 Hard-coding Implicit Price Deflator (gpgdp) for accounting consistency.")
         df['gpgdp'] = df['gngdp'] - df['grgdp']
     
-    # 3. Initialization
+    # 4. Initialization
     model = frbus.Frbus(model_xml)
-    full_start = pd.Period('2006Q1', freq='Q')
+    # We solve starting from the buffer, but our target is the full range
+    solve_start = buffer_idx[0]
     full_end = df.index.max()
 
-    # 4. Recursive Windowing Logic
+    # 5. Recursive Windowing Logic
     missing_registry = {}
-    current_solve_start = full_start
+    current_solve_start = solve_start
     
-    if os.path.exists(state_file):
-        with open(state_file, 'r') as f:
-            missing_registry = json.load(f)
-        print("💾 Loaded cached state as anchor.")
-
     while current_solve_start <= full_end:
         current_solve_end = min(current_solve_start + 3, full_end)
         print(f"🕒 Window: {current_solve_start} to {current_solve_end}")
@@ -86,7 +85,7 @@ def run_pro_engine():
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
                 
-                # Check for solve anchor
+                # Ensure solve anchor
                 if current_solve_start not in current_df.index:
                     new_idx = pd.period_range(start=min(current_df.index.min(), current_solve_start), 
                                               end=max(current_df.index.max(), full_end), freq='Q')
@@ -113,19 +112,17 @@ def run_pro_engine():
                 window_attempts += 1
 
         if not window_passed:
-            print(f"❌ Structural fail at window {current_solve_start}. Accounting alignment insufficient.")
+            print(f"❌ Structural fail at window {current_solve_start}.")
             sys.exit(1)
         
         current_solve_start += 4
             
-    # 5. Final Full Solve & Surgical Export
-    print("🔥 Executing final full-period solve...")
+    # 6. Final Full Solve & Surgical Export (Original Range Only)
+    print("🔥 Executing final solve for actual period (2006-2019)...")
     patch_df = pd.DataFrame(missing_registry, index=df.index)
-    results = model.init_trac(full_start, full_end, pd.concat([df, patch_df], axis=1))
+    results = model.init_trac(first_actual, full_end, pd.concat([df, patch_df], axis=1))
     
-    with open(state_file, 'w') as f:
-        json.dump(missing_registry, f)
-
+    # Surgical Export: Filter only original targets + their residuals
     final_cols = [v for v in target_variables if v in results.columns]
     final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
     results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
