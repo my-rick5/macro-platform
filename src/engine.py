@@ -24,7 +24,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. XML Scraper with High-Headroom Injection
+    # 2. XML Scraper with Surgical Neutrality
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -38,19 +38,22 @@ def run_pro_engine():
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # INCREASED BASELINES: Providing more room before hitting 0.0
-                    if any(x in var for x in ['pitarg', 'targ', 'pi']): base = 2.0
-                    elif any(x in var for x in ['tr', 'tax', 'rt']): base = 0.20
-                    elif any(x in var for x in ['gr', 'gc', 'gi', 'gx', 'gd', 'hgp']): base = 3000.0
-                    else: base = 10.0 # Standard level baseline moved from 1.0 to 10.0
+                    # NEUTRALITY FIX: 
+                    # Many FRB/US equations are log-linearized around 1.0 or 100.0.
+                    # We use 100.0 as a safer 'mass' for levels to prevent negative identities.
+                    if any(x in var for x in ['pitarg', 'targ', 'pi', 'r', 'lur']): 
+                        base = 2.0 
+                    else: 
+                        base = 100.0 
                     
-                    new_data[var] = [base + (i * 1e-7)] * len(df)
+                    # We use a larger unique offset to ensure the Jacobian doesn't stall
+                    new_data[var] = [base + (i * 0.01)] * len(df)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Robust Padding & Smart Clipping
+    # 3. Aggressive Padding & Solver Floor
     df = df.sort_index()
     start_date = df.index.min()
     padding_dates = [start_date - i for i in range(1, 13)]
@@ -60,20 +63,16 @@ def run_pro_engine():
 
     df = pd.concat([padding_df, df]).sort_index()
     
-    # SMART CLIP: Use a 0.1 floor for nominal levels and 0.01 for rates
-    # This provides 10x more buffer for the variables identified in #258
-    for col in df.columns:
-        if any(x in col for x in ['pi', 'r', 'tr', 'lur']):
-            df[col] = df[col].clip(lower=0.01)
-        else:
-            df[col] = df[col].clip(lower=0.5) # Aggressive floor for levels
-
-    # 4. Engine Solve
+    # 4. Engine Solve with Exception Capture
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         
         solve_start = pd.PeriodIndex([f.index.min() for f in data_frames], freq='Q').min()
+        
+        # Apply a 'Nuclear Floor' - nothing can be below 0.1, period.
+        df = df.ffill().bfill().clip(lower=0.1).copy()
+        
         results = model.init_trac(solve_start, df.index.max(), df)
         
         mask = [c for c in results.columns if c.lower() in actual_data_cols or any(x in c.lower() for x in actual_data_cols)]
@@ -82,6 +81,10 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # Identify the variable most likely to have tripped the log
+        # by looking for variables that have the smallest values
+        potential_crashers = df.min().nsmallest(5).to_dict()
+        print(f"🔍 Diagnostic: Variables closest to zero: {potential_crashers}")
         raise
 
 if __name__ == "__main__":
