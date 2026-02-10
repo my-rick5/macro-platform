@@ -13,17 +13,14 @@ def clean_fed_excel(excel_path, output_dir):
             continue
             
         print(f"🔎 Processing Sheet: {sheet}")
-        # Load raw data to inspect
         df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
         if df.empty: continue
 
         # 1. First column is our Date
         df.rename(columns={df.columns[0]: 'date_raw'}, inplace=True)
-        
-        # 2. Map Variable Name
         var_name = 'LUR' if 'unemp' in sheet.lower() else sheet.upper()
         
-        # 3. Standardize Dates
+        # 2. Standardize Dates
         def parse_period(val):
             s = str(val).strip()
             s = re.sub(r'[:.\- ]', 'Q', s)
@@ -32,34 +29,39 @@ def clean_fed_excel(excel_path, output_dir):
 
         df['date'] = df['date_raw'].apply(parse_period)
         
-        # 4. DATA EXTRACTION: Force numeric conversion on all but the date
-        # We look for the last column that contains mostly numbers
+        # 3. BETTER DATA EXTRACTION: Try all columns from right to left
         data_col = None
-        for col in reversed(df.columns[1:-1]): # Search backwards, skip the date and the very last potential empty col
+        for col in reversed(df.columns):
+            if col in ['date', 'date_raw']: continue
+            
             converted = pd.to_numeric(df[col], errors='coerce')
-            # If at least 50% of the column is numeric and values are reasonable
-            if converted.notna().sum() > (len(df) * 0.5):
-                # Filter out those huge date-integers (e.g. 19670426)
-                if converted.abs().max() < 1000:
+            valid_count = converted.notna().sum()
+            
+            # If we find at least some valid numbers that aren't date-integers
+            if valid_count > 10:
+                # Sanity check: is it a date like 19670426?
+                if converted.abs().max() < 2000:
                     df[var_name] = converted
                     data_col = col
                     break
         
         if data_col:
+            # 4. DEDUPLICATION: Ensure one value per quarter
             final_df = df.dropna(subset=['date', var_name])
-            if not final_df.empty:
-                try:
-                    final_df = final_df[['date', var_name]].copy()
-                    final_df['date'] = pd.PeriodIndex(final_df['date'], freq='Q')
-                    save_path = os.path.join(output_dir, f"{var_name.lower()}.csv")
-                    final_df.set_index('date').sort_index().to_csv(save_path)
-                    print(f"   ✅ Saved {var_name} ({len(final_df)} obs). Latest: {final_df[var_name].iloc[-1]}")
-                except Exception as e:
-                    print(f"   ❌ Formatting error: {e}")
-            else:
-                print(f"   ⚠️ No valid rows after cleaning.")
+            final_df = final_df[['date', var_name]].copy()
+            
+            # Keep only the LAST entry for any duplicate quarter
+            final_df = final_df.drop_duplicates(subset=['date'], keep='last')
+            
+            try:
+                final_df['date'] = pd.PeriodIndex(final_df['date'], freq='Q')
+                save_path = os.path.join(output_dir, f"{var_name.lower()}.csv")
+                final_df.set_index('date').sort_index().to_csv(save_path)
+                print(f"   ✅ Saved {var_name} ({len(final_df)} obs). Latest: {final_df[var_name].iloc[-1]}")
+            except Exception as e:
+                print(f"   ❌ Formatting error: {e}")
         else:
-            print(f"   ❌ Could not find a valid numeric data column.")
+            print(f"   ❌ Could not find valid data column in sheet '{sheet}'.")
 
     print(f"🏁 Finished. Created {len(os.listdir(output_dir))} valid data files.")
 
