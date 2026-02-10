@@ -6,7 +6,7 @@ import json
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Symmetric Decay Engine Started.")
+print("💓 Heartbeat: Surgical Bypass Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -27,37 +27,19 @@ def run_pro_engine():
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
         
-    df_raw = pd.concat([
+    df = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
         .assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q'))
         .set_index('date') 
         for f in files
     ], axis=1).sort_index()
     
-    df_raw.index = pd.PeriodIndex(df_raw.index, freq='Q')
-    df_raw.columns = [c.lower() for c in df_raw.columns]
-    target_variables = list(df_raw.columns)
+    df.index = pd.PeriodIndex(df.index, freq='Q')
+    df.columns = [c.lower() for c in df.columns]
+    target_variables = list(df.columns)
 
-    # 🎯 2. SYMMETRIC DECAY BUFFER (Steady-State Initialization)
-    first_actual = df_raw.index.min()
-    buffer_idx = pd.period_range(start=first_actual - 4, end=first_actual - 1, freq='Q')
-    
-    # Use a positive 0.1% drift to keep internal identities 'moving' forward
-    steady_drift = 0.001 
-    print(f"📊 Data start: {first_actual}. Seeding steady-state drift at {steady_drift:.4f}")
-    
-    buffer_df = pd.DataFrame(index=buffer_idx, columns=df_raw.columns)
-    for col in df_raw.columns:
-        if any(x in col for x in ['g', 'pi', 'r', 'u', 'gap']):
-            buffer_df[col] = steady_drift 
-        else:
-            # Anchor levels to be identity-consistent with the drift
-            buffer_df[col] = df_raw[col].iloc[0] / (1 + steady_drift)
-    
-    df = pd.concat([buffer_df, df_raw]).sort_index()
-
-    # 3. UNIT & ACCOUNTING ENFORCEMENT
-    print("⚖️ Normalizing units and enforcing identities on steady-state start...")
+    # 🎯 2. UNIT & ACCOUNTING ENFORCEMENT (On Raw Data)
+    print("⚖️ Normalizing units and enforcing identities...")
     for col in df.columns:
         avg_val = df[col].mean()
         is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
@@ -70,14 +52,28 @@ def run_pro_engine():
     if all(x in df.columns for x in ['gngdp', 'grgdp', 'gpgdp']):
         df['gpgdp'] = df['gngdp'] - df['grgdp']
     
-    # 4. Initialization
+    # 3. Initialization
     model = frbus.Frbus(model_xml)
-    solve_start = buffer_idx[0]
+    first_actual = df.index.min()
     full_end = df.index.max()
-
-    # 5. Recursive Windowing Logic
     missing_registry = {}
-    current_solve_start = solve_start
+
+    # 🎯 4. SURGICAL BYPASS: Isolation Mode for 1989Q3
+    print(f"⚡ Bypassing buffer. Hard-starting isolation solve at {first_actual}...")
+    try:
+        # Solving only the first quarter to seed the 'missing' structural variables
+        first_q_results = model.init_trac(first_actual, first_actual, df)
+        for col in first_q_results.columns:
+            if col not in target_variables:
+                missing_registry[col] = float(first_q_results[col].iloc[0])
+        print("✅ Isolation Anchor established.")
+    except Exception as e:
+        print(f"⚠️ Isolation failed: {e}. Attempting recovery via zero-seed...")
+        # Fallback to a zero-seed if isolation mode is too strict
+        missing_registry = {}
+
+    # 5. Recursive Windowing Logic (Starting from the second quarter)
+    current_solve_start = first_actual + 1
     
     while current_solve_start <= full_end:
         current_solve_end = min(current_solve_start + 3, full_end)
@@ -91,11 +87,6 @@ def run_pro_engine():
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
                 
-                if current_solve_start not in current_df.index:
-                    new_idx = pd.period_range(start=min(current_df.index.min(), current_solve_start), 
-                                              end=max(current_df.index.max(), full_end), freq='Q')
-                    current_df = current_df.reindex(new_idx).ffill().bfill()
-
                 results = model.init_trac(current_solve_start, current_solve_end, current_df)
                 
                 for col in results.columns:
@@ -123,14 +114,14 @@ def run_pro_engine():
         current_solve_start += 4
             
     # 6. Final Solve & Export
-    print(f"🔥 Finalizing residuals for {first_actual} through {full_end}...")
+    print(f"🔥 Exporting final residuals for {first_actual} through {full_end}...")
     patch_df = pd.DataFrame(missing_registry, index=df.index)
     results = model.init_trac(first_actual, full_end, pd.concat([df, patch_df], axis=1))
     
     final_cols = [v for v in target_variables if v in results.columns]
     final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
     results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
-    print("✅ Build Successful. Residuals exported.")
+    print("✅ Build Successful. Results Ready.")
 
 if __name__ == "__main__":
     try:
