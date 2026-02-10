@@ -24,26 +24,28 @@ pipeline {
 
                     echo "📦 Precision Namespace Alignment & Package Patching..."
                     sh """
-                        # 1. Install package and dependencies (Added openpyxl for Excel support)
+                        # 1. Install package and dependencies
                         docker exec -w /source_code/pyfrbus ${CONTAINER_NAME} python3 -m pip install . psutil openpyxl
                         
-                        # 2. Move to /opt to prevent shadowing issues
+                        # 2. Setup /opt for the platform
                         docker exec ${CONTAINER_NAME} mkdir -p /opt/macro_platform
                         docker exec ${CONTAINER_NAME} cp -r /source_code/pyfrbus/. /opt/macro_platform/
                         
-                        # 3. PATCH: Fix the floating-point bug in their load_data.py
+                        # 3. PATCH: Fix floating-point index bug in pyfrbus core
                         docker exec ${CONTAINER_NAME} sed -i 's/data.index, freq=\"Q\"/data.index.astype(str), freq=\"Q\"/g' /opt/macro_platform/pyfrbus/load_data.py
                         
-                        # 4. Initialize Spark directories (Added /processed folder)
+                        # 4. Initialize Data Structure
                         docker exec ${CONTAINER_NAME} mkdir -p /home/spark/models /home/spark/data/processed /home/spark/results
                         
-                        # UPDATED: Use the Excel Library as the source
-                        # Assuming your file is in external_data/ inside your repo
-                        docker exec ${CONTAINER_NAME} cp /source_code/external_data/GBweb_Row_Format.xlsx /home/spark/data/library.xlsx
+                        # 5. VERIFY SOURCE: Check if Excel exists in repo before copying
+                        echo "🔍 Listing external_data contents..."
+                        docker exec ${CONTAINER_NAME} ls -l /source_code/external_data/
                         
+                        # 6. COPY: Move library and model to spark home
+                        docker exec ${CONTAINER_NAME} cp /source_code/external_data/GBweb_Row_Format.xlsx /home/spark/data/library.xlsx || echo "⚠️ Warning: library.xlsx not found"
                         docker exec ${CONTAINER_NAME} cp /opt/macro_platform/models/model.xml /home/spark/models/model.xml
                         
-                        # 5. REMOVE SHADOWING
+                        # 7. CLEAN: Remove shadowing source code to ensure /opt is used
                         docker exec ${CONTAINER_NAME} rm -rf /home/spark/pyfrbus
                         docker exec ${CONTAINER_NAME} rm -rf /source_code/pyfrbus
                     """
@@ -54,6 +56,15 @@ pipeline {
                         -e PYTHONPATH=${COMBINED_PATH} \
                         ${CONTAINER_NAME} python3 /source_code/src/preprocess.py
                     """
+                    
+                    # FAIL FAST: Check if any CSVs were generated
+                    script {
+                        def csvCount = sh(script: "docker exec ${CONTAINER_NAME} ls /home/spark/data/processed | wc -l", returnStdout: true).trim()
+                        if (csvCount == "0") {
+                            error "❌ Build Failed: Preprocessor found 0 variables. Check Excel header regex."
+                        }
+                        echo "✅ Preprocessor generated ${csvCount} variables."
+                    }
 
                     echo "🚀 STEP 2: Running Structural Engine..."
                     sh """
@@ -76,6 +87,12 @@ pipeline {
             }
             echo "📦 Archiving Results..."
             archiveArtifacts artifacts: 'results/*.csv, models/*.xml', allowEmptyArchive: true
+        }
+        success {
+            echo "✨ Pipeline Complete: Economic forecast generated successfully."
+        }
+        failure {
+            echo "🔴 Pipeline Failed: Check the Master Data Matrix logs for variable gaps."
         }
     }
 }
