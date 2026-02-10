@@ -24,10 +24,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Ordered Scaling Injection
-    real_mean = df[actual_data_cols].mean().mean()
-    print(f"📊 Using Hierarchical Scaling based on Mean: {real_mean:.2f}")
-
+    # 2. Log-Neutral Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -38,41 +35,34 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
-                t = np.arange(len(df))
                 new_data = {}
                 for i, var in enumerate(missing_vars):
-                    # HIERARCHY LOGIC: 
-                    # We create a 'Weight' for each variable type. 
-                    # Aggregates get 100% of mean, components get 20%, subtractions get 5%.
-                    if any(x in var for x in ['pi', 'r', 'lur', 'targ']): 
-                        base = 2.0 # Rates stay at 2%
-                    elif any(x in var for x in ['gdp', 'y', 'val']): 
-                        base = real_mean * 1.5 # Super-Aggregates
-                    elif any(x in var for x in ['tax', 'm', 'save', 'w']): 
-                        base = real_mean * 0.1 # Subtractions/Leads (kept very small)
-                    else: 
-                        base = real_mean * 0.5 # Default components
-                    
-                    # Trend + Offset
-                    new_data[var] = base + (t * 1e-6) + (i * 1e-9)
+                    # NEUTRALITY FIX: 
+                    # Rates and price indices stay at 1.0 (log-neutral)
+                    # We add a micro-jitter to prevent singular matrices
+                    base = 1.0 
+                    new_data[var] = base + (np.arange(len(df)) * 1e-8) + (i * 1e-10)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Solver Prep
+    # 3. Buffer and Final Solve
     df = df.sort_index()
     first_obs = df.index.min()
-    padding_df = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 25)], freq='Q'), columns=df.columns)
+    # 32-quarter buffer to ensure even the longest expectations (t+30) have data
+    padding_df = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 33)], freq='Q'), columns=df.columns)
     for col in df.columns: padding_df[col] = df[col].iloc[0]
     
     df = pd.concat([padding_df, df]).sort_index()
+    # Floor of 0.1 remains to prevent absolute zero logs
     df = df.ffill().bfill().clip(lower=0.1).copy()
 
-    # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
+        
+        # Use solve_start with a deep lookback buffer
         results = model.init_trac(first_obs, df.index.max(), df)
         
         mask = [c for c in results.columns if c.lower() in actual_data_cols or any(x in c.lower() for x in actual_data_cols)]
@@ -81,8 +71,9 @@ def run_pro_engine():
         
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Find the smallest identity result in the dataframe to see if we're close to a crash
-        print(f"🔍 Min Value across all variables: {df.min().min():.6f}")
+        # Identify the exact column causing the log-floor strike
+        min_series = df.min().idxmin()
+        print(f"🔍 Diagnostic: Minimum value strike on variable `{min_series}`")
         raise
 
 if __name__ == "__main__":
