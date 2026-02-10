@@ -18,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Stochastic Identity Decoupling
+    # 2. Scrape and High-Inertia Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -28,35 +28,32 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} dummies...")
-                # Use a seed for reproducibility while maintaining variance
-                rng = np.random.default_rng(278) 
+                t = np.arange(len(df))
                 new_data = {}
-                for var in missing_vars:
-                    # Assign a unique, random baseline within 'Safe Zones'
-                    if any(x in var for x in ['pi', 'r', 'lur', 'targ']):
-                        base = rng.uniform(1.5, 2.5) # Rates 
-                    elif any(x in var for x in ['grgov', 'grres', 'gdp', 'y']):
-                        base = rng.uniform(5000, 10000) # Heavy Aggregates
-                    else:
-                        base = rng.uniform(100, 500) # Components
-                    
-                    # Add unique micro-growth to avoid divide-by-zero
-                    growth = 1 + rng.uniform(0.0001, 0.0005)
-                    new_data[var] = base * (growth ** np.arange(len(df)))
+                for i, var in enumerate(missing_vars):
+                    # We use '1000' as a massive stabilizer to prevent any log flips
+                    base = 1000.0 if not any(x in var for x in ['pi', 'r', 'lur']) else 2.0
+                    # Add a 0.1% growth trend + unique identity offset
+                    new_data[var] = base * (1.001 ** t) + (i * 1e-7)
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Execution with Historical Padding
+    # 3. Apply Log-Safe Floor
+    # This ensures no value is small enough to trigger a log-singularity during solver iterations
+    df = df.clip(lower=1.0) 
+
+    # 4. Deep Buffer Padding
     first_obs = df.index.min()
-    padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 33)], freq='Q'), columns=df.columns)
+    padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
-    df = pd.concat([padding, df]).sort_index().ffill().bfill().clip(lower=0.1)
+    df = pd.concat([padding, df]).sort_index()
 
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
+        # Start solve at the first real data point
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
