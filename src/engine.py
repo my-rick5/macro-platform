@@ -18,34 +18,39 @@ def run_pro_engine():
 
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. THE ULTIMATE FIX: Parse XML directly for required variables
+    # 2. DYNAMIC INJECTION: Robust XML Parsing
     print("🛰️  Parsing Model XML for dependencies...")
     try:
         tree = ET.parse(model_xml)
-        root = tree.getroot()
-        # Find all variables defined in the XML
-        expected_vars = [v.get('name') for v in root.findall('.//variable')]
+        # Use .iter() to find 'variable' tags anywhere in the tree, ignoring namespaces
+        expected_vars = []
+        for elem in tree.iter():
+            if 'variable' in elem.tag:
+                name = elem.get('name')
+                if name:
+                    expected_vars.append(name)
         
+        expected_vars = list(set(expected_vars)) # De-duplicate
         missing_vars = [v for v in expected_vars if v not in df.columns]
         
         if missing_vars:
-            print(f"⚠️  Injecting {len(missing_vars)} missing variables...")
+            print(f"⚠️  Injecting {len(missing_vars)} missing variables into DataFrame...")
             for var in missing_vars:
-                # Targeted defaults for policy variables vs residuals
                 if 'dmpt' in var:
-                    df[var] = 2.0  # Inflation/Unemp targets
+                    df[var] = 2.0
                 elif 'delrff' in var:
-                    df[var] = 3.0  # Fed Funds Rate
+                    df[var] = 3.0
                 else:
-                    df[var] = 0.0  # Neutral default for all others
+                    df[var] = 0.0
     except Exception as e:
-        print(f"⚠️  XML Parse failed ({e}), falling back to manual injection.")
+        print(f"❌ Critical XML Parse Error: {e}")
 
-    # 3. Clean up and establish window
+    # 3. Establish the window and Clean
+    # Ensure no NaN values exist which break the C++ solver backend
     df = df.ffill().bfill().fillna(0.0)
-    df_overlap = df.dropna()
-    start_date = df_overlap.index.min()
-    end_date = df_overlap.index.max()
+    
+    start_date = df.index.min()
+    end_date = df.index.max()
 
     print(f"\n📊 --- MASTER DATA MATRIX ---")
     print(f"Total Shape: {df.shape}")
@@ -56,6 +61,7 @@ def run_pro_engine():
         model = frbus.Frbus(model_xml)
         print("🏗️  Model Loaded. Calculating Residuals...")
         
+        # init_trac will now see a complete dataframe
         results = model.init_trac(start_date, end_date, df)
         print("✅ Engine Solve Successful.")
         
@@ -63,6 +69,7 @@ def run_pro_engine():
         results.to_csv("/home/spark/results/residuals.csv")
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # Log the specific variable if pyfrbus tells us which one is still missing
         raise
 
 if __name__ == "__main__":
