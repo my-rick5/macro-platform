@@ -15,6 +15,18 @@ pipeline {
             }
         }
 
+        stage('Debug XML Structure') {
+            steps {
+                script {
+                    echo "🔍 Inspecting XML formatting..."
+                    // Print first 30 lines
+                    sh "docker exec engine-run-219 head -n 30 /home/spark/models/model.xml"
+                    // Find the line containing dmptmax to see its attribute names
+                    sh "docker exec engine-run-219 grep -i 'dmptmax' /home/spark/models/model.xml | head -n 5"
+                }
+            }
+        }
+
         stage('Run Engine') {
             steps {
                 script {

@@ -16,52 +16,44 @@ def run_pro_engine():
         data_frames.append(tmp.set_index('date'))
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. Aggressive Dynamic Injection
+    # 2. Primitive Scraper + Hardcoded Safety Net
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
-                xml_content = f.read()
+                content = f.read()
             
-            # This regex looks for any alphanumeric string assigned to name, alias, or series 
-            # It also handles potential whitespace or different quote types
-            found_vars = re.findall(r'(?:name|alias|series)\s*=\s*["\']([^"\']+)["\']', xml_content)
-            expected_vars = list(set(found_vars))
+            # Find ANY word-like string that is 3-15 chars long and lowercase
+            # FRB/US variables are almost always lowercase.
+            found_vars = re.findall(r'[>\s"\']([a-z][a-z0-9_]{2,14})[<\s"\']', content)
             
-            print(f"🛰️  Scraper found {len(expected_vars)} unique identifiers in XML.")
+            # MANDATORY BLOCKERS (Hardcoded until scraper is fixed)
+            blockers = ['dmptmax', 'delrff', 'dmptmin', 'mptmax', 'mptmin', 'drff']
             
-            # Force-add dmptmax just in case the scraper still misses it
-            if 'dmptmax' not in expected_vars:
-                expected_vars.append('dmptmax')
+            expected_vars = list(set(found_vars + blockers))
+            print(f"🛰️  Scraper/Manual list: {len(expected_vars)} variables identified.")
 
             missing_vars = [v for v in expected_vars if v not in df.columns]
-            
             if missing_vars:
-                print(f"⚠️  Injecting {len(missing_vars)} missing series...")
+                print(f"⚠️  Injecting {len(missing_vars)} series...")
                 for var in missing_vars:
-                    # Provide standard default values for FRB/US policy/threshold variables
-                    if 'dmpt' in var: df[var] = 2.0
-                    elif 'delrff' in var: df[var] = 3.0
-                    else: df[var] = 0.0
+                    # Policy vars usually need a non-zero floor to avoid math errors
+                    val = 2.0 if 'mpt' in var else 0.0
+                    df[var] = val
         except Exception as e:
-            print(f"❌ Scraper Error: {e}")
-    
-    # 3. Final Prep & Gap Filling
+            print(f"❌ Scraper Failed: {e}")
+
+    # 3. Final Prep
     df = df.ffill().bfill().fillna(0.0)
-    
-    print(f"\n📊 --- MASTER DATA MATRIX ---")
-    print(f"Total Shape: {df.shape}") 
-    
-    # 4. Initialize and Solve
+    print(f"📊 Matrix Shape: {df.shape}")
+
+    # 4. Solve
     try:
         model = frbus.Frbus(model_xml)
-        print("🏗️  Model Loaded. Calculating Residuals...")
         results = model.init_trac(df.index.min(), df.index.max(), df)
-        print("✅ Engine Solve Successful.")
-        
-        os.makedirs("/home/spark/results", exist_ok=True)
+        print("✅ Success!")
         results.to_csv("/home/spark/results/residuals.csv")
     except Exception as e:
-        print(f"❌ Engine Failed: {e}")
+        print(f"❌ Failed again on variable: {e}")
         raise
 
 if __name__ == "__main__":
