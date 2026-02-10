@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Temporal Bridge Engine Started.")
+print("💓 Heartbeat: Safe Temporal Bridge Engine.")
 print("--------------------------------------------------")
 
 try:
@@ -22,6 +22,7 @@ def run_pro_engine():
     results_dir = os.path.join(working_dir, "results")
     os.makedirs(results_dir, exist_ok=True)
     
+    # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     df = pd.concat([pd.read_csv(os.path.join(data_path, f)).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') for f in files], axis=1).sort_index()
     df.index = pd.PeriodIndex(df.index, freq='Q')
@@ -46,13 +47,22 @@ def run_pro_engine():
     current_solve_start = first_actual + 1
     
     while current_solve_start <= full_end:
-        # 🎯 FIX: TEMPORAL BRIDGING (BYPASS 1989Q4)
+        # 🎯 FIX: SAFE TEMPORAL BRIDGING
         if current_solve_start == pd.Period('1989Q4', freq='Q'):
-            print("🌉 1989Q4 Deadlock Detected. Interpolating bridge to 1990Q1...")
-            for var in target_variables:
-                q3_val = df.loc[pd.Period('1989Q3', freq='Q'), var]
-                q1_90_val = df.loc[pd.Period('1990Q1', freq='Q'), var]
-                df.loc[current_solve_start, var] = (q3_val + q1_90_val) / 2
+            print("🌉 1989Q4 Deadlock Detected. Checking bridge availability...")
+            
+            target_period = pd.Period('1990Q1', freq='Q')
+            if target_period in df.index:
+                # Interpolate if 1990 data exists
+                for var in target_variables:
+                    q3_val = df.loc[pd.Period('1989Q3', freq='Q'), var]
+                    q1_90_val = df.loc[target_period, var]
+                    df.loc[current_solve_start, var] = (q3_val + q1_90_val) / 2
+            else:
+                # 🛡️ Fallback: Last-Value Carry (Avoids KeyError)
+                print("⚠️ 1990Q1 not in data. Carrying 1989Q3 values to bridge the gap.")
+                for var in target_variables:
+                    df.loc[current_solve_start, var] = df.loc[pd.Period('1989Q3', freq='Q'), var]
 
         step_size = 1 if current_solve_start < pd.Period('1991Q1', freq='Q') else 4
         current_solve_end = min(current_solve_start + (step_size - 1), full_end)
@@ -81,6 +91,7 @@ def run_pro_engine():
             
         current_solve_start += step_size
             
+    # Final Export to Artifact Workspace
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     results = model.init_trac(first_actual, full_end, final_data, **solver_params)
