@@ -8,7 +8,8 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
-    os.makedirs(results_dir, exist_index=True)
+    # 🚀 FIXED TYPO: changed exist_index to exist_ok
+    os.makedirs(results_dir, exist_ok=True)
     
     # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
@@ -25,8 +26,7 @@ def run_pro_engine():
     df = df.clip(lower=0.01)
     df = np.exp(np.log(df).interpolate(method='linear')).bfill().ffill()
 
-    # 3. 🚀 THE PRECISION AUDIT: Find the "Log-Killer"
-    # FRB/US often fails if a value is too small to be used in a denominator.
+    # 3. THE PRECISION AUDIT: Find the "Log-Killer"
     LOG_THRESHOLD = 0.01 
     critical_failures = []
     
@@ -38,7 +38,7 @@ def run_pro_engine():
 
     if critical_failures:
         print("\n⚠️ LOG-DANGER ALERT: Found values likely to cause 'divide by zero in log':")
-        for fail in critical_failures[:10]: # Print first 10
+        for fail in critical_failures[:10]:
             print(fail)
         print(f"...Total danger points found: {len(critical_failures)}\n")
 
@@ -53,7 +53,7 @@ def run_pro_engine():
         except Exception: pass
 
     # 5. Final Engine Execution
-    # 🚀 SAFETY BUMP: Increase floor to 1.0 to ensure log(x) > 0
+    # SAFETY BUMP: Increase floor to 1.0 to ensure log(x) >= 0
     df = df.abs().clip(lower=1.0)
     
     try:
