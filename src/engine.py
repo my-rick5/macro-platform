@@ -18,7 +18,7 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Balanced Growth Path Injection
+    # 2. Unit-Standard Balanced Growth Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -31,32 +31,34 @@ def run_pro_engine():
                 t = np.arange(len(df))
                 new_data = {}
                 
-                # ECONOMIST'S ANCHOR: All dummies grow at 0.5% per quarter.
-                # This ensures all ratios (dummy_A / dummy_B) are constant.
+                # REFINED ANCHOR: 0.5% growth is standard, but we start at 1.0 (Unit-Standard)
+                # This prevents 'overflow encountered in exp' by keeping levels realistic.
                 master_growth = 1.005 ** t
                 
                 for i, var in enumerate(missing_vars):
-                    # Level offset: Ensures no two variables are identical (avoids singular Jacobian)
-                    # Magnitude: 10,000 baseline provides massive headroom for identities.
-                    level_offset = 1.0 + (i * 0.001)
-                    new_data[var] = 10000.0 * level_offset * master_growth
+                    # Each variable gets a unique fraction of 1.0 to keep identities positive
+                    # and ensure the Jacobian matrix remains non-singular.
+                    level_offset = 1.0 + (i * 0.0001)
+                    new_data[var] = level_offset * master_growth
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Buffer and Final Floor
+    # 3. Buffer and Numerical Safety
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
-    df = pd.concat([padding, df]).sort_index().ffill().bfill().clip(lower=100.0)
+    
+    # We clip at 0.1 to avoid the log boundary while staying within the unit range
+    df = pd.concat([padding, df]).sort_index().ffill().bfill().clip(lower=0.1)
 
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        # Solve start must align with the beginning of the real data
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
+        # Filter for only your 15 real variables for the final output
         results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
