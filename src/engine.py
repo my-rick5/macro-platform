@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import re
+import numpy as np
 from pyfrbus import frbus
 
 def run_pro_engine():
@@ -19,10 +20,9 @@ def run_pro_engine():
         tmp['date'] = pd.PeriodIndex(tmp['date'], freq='Q')
         data_frames.append(tmp.set_index('date'))
     
-    # Initial DF from actual data
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. XML-Aware Scraper with Optimized Injection
+    # 2. XML-Aware Scraper with "Safe" Nominal Baselines
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -34,37 +34,41 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️  Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
-                # Optimized: Create a separate DF for missing vars and join ONCE
                 new_data = {}
                 for var in missing_vars:
-                    val = 2.0 if any(x in var for x in ['mpt', 'lur', 'pi']) else 1.0
+                    # Logic: Use 100.0 for things that look like indices (p = price, x = nominal)
+                    # Use 2.0 for rates, 1.0 for the rest. Never 0.0.
+                    if any(p in var for p in ['p', 'x', 'y']): val = 100.0
+                    elif any(r in var for r in ['mpt', 'lur', 'pi', 'r']): val = 2.0
+                    else: val = 1.0
                     new_data[var] = [val] * len(df)
                 
-                missing_df = pd.DataFrame(new_data, index=df.index)
-                df = pd.concat([df, missing_df], axis=1)
-                
+                df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. INCREASED Lag Padding (to 8 Quarters)
+    # 3. Deep Lag Padding (8 Quarters) & Value Clamping
     df = df.sort_index()
     start_date = df.index.min()
-    # 8 quarters provides enough history for t-1 through t-8 lags
     padding_dates = [start_date - i for i in range(1, 9)]
-    padding_df = pd.DataFrame(1.0, index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
+    # Start padding with 100.0 as a safe default for the buffer
+    padding_df = pd.DataFrame(100.0, index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
     
-    # Consolidate and defragment
     df = pd.concat([padding_df, df]).sort_index()
-    df = df.copy() # This forces a defragmentation of the underlying memory
-    df = df.ffill().bfill().replace(0, 1.0)
     
+    # CRITICAL: Clamp values to a minimum of 0.0001 to prevent log(0)
+    # FRB/US equations often fail if values are exactly 0.
+    df = df.ffill().bfill().clip(lower=0.0001)
+    df = df.copy() 
+
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
-    print(f"📊 Final Padded Matrix Shape: {df.shape}")
+    print(f"📊 Matrix Clamped & Saved. Range: {df.index.min()} to {df.index.max()}")
 
     # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️  Model Loaded. Calculating Residuals...")
+        # Note: We still calculate from start_date to ignore the padding in the results
         results = model.init_trac(start_date, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results.to_csv(os.path.join(results_dir, "residuals.csv"))
