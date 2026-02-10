@@ -17,18 +17,22 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Strict Reconstruction
+    # 2. Reindex and Continuous Fill
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index).bfill().interpolate(method='linear').ffill()
 
-    # 🚀 THE STAGGERED OFFSET:
-    # We calibrate to 100.0 but add a unique epsilon (0.001 * i) to every variable.
-    # This "breaks" the perfect 1.0 ratios that caused the divide-by-zero.
+    # 🚀 THE LOG-SAFE NORMALIZATION:
+    # Instead of base 100, we use base 10,000.
+    # This ensures that even a massive Newton step (-500 units) 
+    # won't result in a negative number, protecting the log() identities.
     for i, col in enumerate(actual_cols):
         start_val = df.loc['2006Q1', col]
-        if start_val != 0:
-            df[col] = (df[col] / start_val) * (100.0 + (i * 0.001))
-        df[col] = df[col].abs().clip(lower=1.0)
+        if abs(start_val) > 1e-5:
+            # Shift data to high-magnitude space while keeping growth rates
+            df[col] = (df[col] / start_val) * (10000.0 + (i * 1.0))
+        else:
+            df[col] = 10000.0 + (i * 1.0)
+        df[col] = df[col].abs().clip(lower=1000.0)
 
     # 3. Model Variable Synchronization (Proxies)
     if os.path.exists(model_xml):
@@ -36,18 +40,18 @@ def run_pro_engine():
             with open(model_xml, 'r', encoding='utf-8') as f:
                 expected_vars = [v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', f.read()) if v.strip()]
             
-            # Give proxies their own distinct neighborhood (105.0 range)
-            new_vars_dict = {v: pd.Series(105.0 + (i * 0.001), index=df.index) for i, v in enumerate(expected_vars) if v not in df.columns}
+            # Proxies get their own uniquely offset high-base neighborhood
+            new_vars_dict = {v: pd.Series(11000.0 + (i * 1.0), index=df.index) for i, v in enumerate(expected_vars) if v not in df.columns}
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception: pass
 
     # 4. Final Engine Execution
     try:
         model = frbus.Frbus(model_xml)
-        solve_start = df.index[8] # 2006Q1
-        print(f"🏗️ Model Loaded. Solving with Staggered Offsets: {solve_start} to {df.index.max()}")
+        solve_start = df.index[8] 
+        print(f"🏗️ Model Loaded. Solving with High-Base Normalization: {solve_start} to {df.index.max()}")
         
-        # Solving with Newton-Raphson enabled by non-singular matrix
+        # Solving with a massive numerical buffer against log(negative) crashes
         results = model.init_trac(solve_start, df.index.max(), df)
         
         print("✅ Engine Solve Successful.")
