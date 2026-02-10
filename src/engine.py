@@ -5,9 +5,8 @@ import sys
 import json
 import numpy as np
 
-# 💓 HEARTBEAT: Force visibility in Jenkins Console
 print("--------------------------------------------------")
-print("💓 Heartbeat: Structural Engine Script Started.")
+print("💓 Heartbeat: Recursive Window Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -22,16 +21,11 @@ def run_pro_engine():
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
     state_file = "/home/spark/models/solver_state.json"
-    
-    # Corrected directory creation
     os.makedirs(results_dir, exist_ok=True)
     
     # 1. Load Data
-    print("📂 Loading input CSVs...")
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
-    if not files:
-        print("❌ No data files found.")
-        return
+    if not files: return
         
     df = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
@@ -46,83 +40,91 @@ def run_pro_engine():
     
     # 2. Initialization
     model = frbus.Frbus(model_xml)
-    solve_start = pd.Period('2006Q1', freq='Q')
-    solve_end = df.index.max()
+    full_start = pd.Period('2006Q1', freq='Q')
+    full_end = df.index.max()
 
-    # 3. Load Existing State (Persistence)
+    # 3. 🚀 RECURSIVE WINDOWING LOGIC
+    # We solve year-by-year to build a mathematically consistent "state"
     missing_registry = {}
+    current_solve_start = full_start
+    
+    # If a state exists, load it as the initial seed
     if os.path.exists(state_file):
-        print(f"💾 Found saved state. Bypassing initial randomness...")
         with open(state_file, 'r') as f:
             missing_registry = json.load(f)
+        print("💾 Loaded prior state as bootstrap seed.")
 
-    # 4. The Healing Loop
-    max_retries = 800
-    attempts = 0
-    print(f"🏗️ Model Loaded. Period: {solve_start} to {solve_end}.")
+    print(f"🏗️ Starting Windowed Solve: {full_start} to {full_end}")
 
-    while attempts < max_retries:
-        try:
-            if missing_registry:
+    while current_solve_start <= full_end:
+        # Define a 1-year window
+        current_solve_end = min(current_solve_start + 3, full_end)
+        print(f"🕒 Current Window: {current_solve_start} to {current_solve_end}")
+        
+        window_attempts = 0
+        window_passed = False
+        
+        while window_attempts < 150:
+            try:
+                # Prepare data for this specific window
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
-            else:
-                current_df = df.copy()
+                
+                # Check for solve anchor
+                if current_solve_start not in current_df.index:
+                    new_idx = pd.period_range(start=min(current_df.index.min(), current_solve_start), 
+                                              end=max(current_df.index.max(), full_end), freq='Q')
+                    current_df = current_df.reindex(new_idx).ffill().bfill()
 
-            # Ensure solve anchor is reachable
-            if solve_start not in current_df.index:
-                new_idx = pd.period_range(start=min(current_df.index.min(), solve_start), 
-                                          end=max(current_df.index.max(), solve_end), 
-                                          freq='Q')
-                current_df = current_df.reindex(new_idx).ffill().bfill()
+                # Attempt window solve
+                results = model.init_trac(current_solve_start, current_solve_end, current_df)
+                
+                # 🔥 CAPTURE STATE: Update registry with the end-of-window values
+                # This "hot-starts" the next year with mathematically legal values
+                for col in results.columns:
+                    if col not in target_variables:
+                        missing_registry[col] = float(results[col].iloc[-1])
+                
+                window_passed = True
+                break
+                
+            except exceptions.MissingDataError as e:
+                match = re.search(r'`([^`]+)`', str(e))
+                if match:
+                    var = match.group(1).lower()
+                    missing_registry[var] = 0.05 if any(x in var for x in ['r','pi','u']) else 100.0
+                window_attempts += 1
+            except (ValueError, exceptions.ComputationError):
+                # Apply localized jitter to break window singularities
+                jitter = 1.0 + (np.random.randn() * 0.01)
+                missing_registry = {k: v * jitter for k, v in missing_registry.items()}
+                window_attempts += 1
 
-            # Attempt Solver Execution
-            results = model.init_trac(solve_start, solve_end, current_df)
+        if not window_passed:
+            print(f"❌ Window {current_solve_start} failed to stabilize.")
+            sys.exit(1)
+        
+        current_solve_start += 4 # Move to the next year
             
-            # --- SUCCESS ---
-            print(f"✅ Solve Successful at Cycle {attempts}.")
-            
-            # Save Winning State
-            with open(state_file, 'w') as f:
-                json.dump(missing_registry, f)
-            
-            # Surgical Export (15 variables + residuals)
-            final_cols = [v for v in target_variables if v in results.columns]
-            final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
-            
-            output_path = os.path.join(results_dir, "residuals_lite.csv")
-            results[final_cols].to_csv(output_path)
-            print(f"📦 Exported {len(final_cols)} columns to {output_path}")
-            return 
+    # 4. FINAL FULL SOLVE
+    print("🔥 All windows passed. Executing final full-period solve...")
+    patch_df = pd.DataFrame(missing_registry, index=df.index)
+    final_df = pd.concat([df, patch_df], axis=1)
+    results = model.init_trac(full_start, full_end, final_df)
+    
+    # Save the final winning state
+    with open(state_file, 'w') as f:
+        json.dump(missing_registry, f)
 
-        except exceptions.MissingDataError as e:
-            match = re.search(r'`([^`]+)`', str(e))
-            if match:
-                var = match.group(1).lower()
-                # Split-Magnitude Init
-                if any(x in var for x in ['r', 'pi', 'u', 'gap', 'del']):
-                    missing_registry[var] = 0.05 
-                else:
-                    missing_registry[var] = 100.0
-                attempts += 1
-            else: raise e
-            
-        except (ValueError, exceptions.ComputationError) as e:
-            # Scaled Jitter
-            multiplier = 1.0013 + (attempts * 0.0001)
-            missing_registry = {k: v * multiplier for k, v in missing_registry.items()}
-            attempts += 1
-            if attempts % 50 == 0:
-                print(f"🔄 Stabilizing: Scaling Cycle {attempts}...")
-
-    print("❌ CRITICAL: Failed to stabilize domain within retry limit.")
-    sys.exit(1)
+    # Surgical Export
+    final_cols = [v for v in target_variables if v in results.columns]
+    final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
+    results[final_cols].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
+    print("✅ Full solve successful. Exported residuals_lite.csv")
 
 if __name__ == "__main__":
     try:
         run_pro_engine()
     except Exception as e:
         print(f"❌ FATAL ERROR: {e}")
-        import traceback
-        traceback.print_exc()
         sys.exit(1)
