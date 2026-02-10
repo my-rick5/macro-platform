@@ -6,7 +6,7 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     print(f"🔍 Searching for data in: {data_path}")
     
-    # 1. Load and merge all processed CSVs
+    # 1. Load and merge all CSVs
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     data_frames = []
     for f in files:
@@ -14,18 +14,21 @@ def run_pro_engine():
         tmp['date'] = pd.PeriodIndex(tmp['date'], freq='Q')
         data_frames.append(tmp.set_index('date'))
 
-    # Merge and explicitly sort to fix the timeline inversion
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. Identify the solver window based on merged data
+    # 2. Identify the solver window
     df_overlap = df.dropna()
     start_date = df_overlap.index.min() if not df_overlap.empty else df.index.min()
     end_date = df_overlap.index.max() if not df_overlap.empty else df.index.max()
 
-    # 3. THE FIX: Inject missing model-required policy variables
+    # 3. THE FIX: Policy & Target Mapping
+    # dmptmax = Inflation target
+    # delrff = Federal Funds Rate
+    # dmptlur = Unemployment target (NAIRU)
     required_vars = {
-        'dmptmax': 2.0,  # Inflation Target
-        'delrff': 3.0    # Federal Funds Rate
+        'dmptmax': 2.0,
+        'delrff': 3.0,
+        'dmptlur': 4.8  
     }
     
     for var, default_val in required_vars.items():
@@ -33,15 +36,15 @@ def run_pro_engine():
             print(f"⚠️  Injecting missing model variable: {var} (defaulting to {default_val})")
             df[var] = default_val
 
-    # Ensure no NaN gaps exist for shorter series (e.g., GPPCE)
+    # 4. Global Cleanup
+    # Ensure no NaN gaps exist for shorter series like GPPCE
     df = df.ffill().bfill().fillna(0.0)
 
     print(f"\n📊 --- MASTER DATA MATRIX ---")
     print(f"Total Shape: {df.shape}")
     print(f"Timeline: {start_date} to {end_date}")
-    print(f"Variables: {df.columns.tolist()}")
     
-    # 4. Initialize and Solve using corrected positional argument
+    # 5. Initialize and Solve
     try:
         model = frbus.Frbus("/home/spark/models/model.xml")
         print("🏗️  Model XML Loaded Successfully.")
