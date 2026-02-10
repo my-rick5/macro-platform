@@ -18,10 +18,11 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
+    # Calculate Macro Anchor to provide structural mass
     macro_anchor = df[actual_data_cols].sum(axis=1).mean()
     print(f"📊 Macro Anchor Scale: {macro_anchor:.2f}")
 
-    # 2. Asymmetric Growth Injection
+    # 2. Asymmetric Growth Injection (Economic Steady-State)
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -35,9 +36,7 @@ def run_pro_engine():
                 new_data = {}
                 
                 for i, var in enumerate(missing_vars):
-                    # ASYMMETRIC LOGIC:
-                    # Give every variable a unique growth rate that is strictly > 0.5%
-                    # This ensures no subtraction identity can ever 'catch up' to its parent
+                    # ASYMMETRIC LOGIC: Unique growth rates prevent identity convergence to zero
                     growth_rate = 1.005 + (i * 0.00001)
                     level_fraction = 0.001 + (i * 0.00005)
                     new_data[var] = macro_anchor * level_fraction * (growth_rate ** t)
@@ -46,22 +45,56 @@ def run_pro_engine():
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Buffer and Non-Zero Floor
+    # 3. Buffering and Stability Clipping
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    # Clip at 5.0 to ensure log(x) is well away from zero for all iterations
+    # Clip at 5.0 to stay far from log(0) and log(negative)
     df = pd.concat([padding, df]).sort_index().ffill().bfill().clip(lower=5.0)
 
+    # --- 🔍 DIAGNOSTIC SUITE START ---
+    print("🔍 Running Mathematical Health Check...")
+    
+    # Check for absolute zeros (the cause of log(0))
+    zeros = df.columns[(df == 0).any()].tolist()
+    if zeros:
+        print(f"⚠️ Found absolute zeros in: {zeros[:15]}")
+
+    # Check for stagnant growth (the cause of divide-by-zero in log-ratios)
+    growth_issues = []
+    for col in df.columns:
+        # Check if any period has exactly zero growth (identical values)
+        if (df[col].pct_change().dropna() == 0).any():
+            growth_issues.append(col)
+            
+    if growth_issues:
+        print(f"🚨 Variables with stagnant growth (Singularity Risk): {growth_issues[:15]}")
+        
+    # Check for Identity Collapse (Aggregate - Components = 0)
+    if 'gdp' in df.columns:
+        # Find the smallest difference between GDP and the sum of its likely components
+        components = df.filter(regex='c|i|g|x')
+        if not components.empty:
+            gap = (df['gdp'] - components.sum(axis=1)).abs().min()
+            print(f"📉 Minimum Identity Gap (GDP vs Components): {gap:.12f}")
+    # --- 🔍 DIAGNOSTIC SUITE END ---
+
+    # 4. Model Execution
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
-        results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
+        
+        # Save only residuals corresponding to actual user data
+        output_mask = [c for c in results.columns if c.lower() in actual_data_cols]
+        results[output_mask].to_csv(os.path.join(results_dir, "residuals.csv"))
+        
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # Print value ranges to see where the overflow or underflow happened
+        print(f"📊 Global Data Range: Min={df.min().min():.4f}, Max={df.max().max():.4f}")
         raise
 
 if __name__ == "__main__":
