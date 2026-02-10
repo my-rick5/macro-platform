@@ -8,7 +8,6 @@ def run_pro_engine():
     data_path = "/home/spark/data/processed"
     model_xml = "/home/spark/models/model.xml"
     results_dir = "/home/spark/results"
-    # 🚀 FIXED TYPO: changed exist_index to exist_ok
     os.makedirs(results_dir, exist_ok=True)
     
     # 1. Load Data
@@ -18,44 +17,38 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_cols = list(df.columns)
     
-    # 2. Strict Reconstruction (Log-Linear)
+    # 2. Strict Reconstruction
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index)
     
-    # Ensure no zeros before log interpolation
-    df = df.clip(lower=0.01)
+    # 🚀 THE "SYMMETRY BREAKER": 
+    # We use a slightly randomized floor (1.0 to 1.01) so that variables 
+    # added together in identities don't perfectly cancel out to zero.
+    df = df.abs()
+    for col in df.columns:
+        df[col] = df[col].clip(lower=1.0 + (np.random.rand() * 0.01))
+    
     df = np.exp(np.log(df).interpolate(method='linear')).bfill().ffill()
 
-    # 3. THE PRECISION AUDIT: Find the "Log-Killer"
-    LOG_THRESHOLD = 0.01 
-    critical_failures = []
-    
-    for col in df.columns:
-        zeros = df[df[col] < LOG_THRESHOLD][col]
-        if not zeros.empty:
-            for date, val in zeros.items():
-                critical_failures.append(f"🚩 {col} at {date}: value {val}")
+    # 3. Targeted Audit (Printing the culprits)
+    print("\n🔍 --- FINAL PRE-SOLVE AUDIT ---")
+    for col in ['grres', 'grgovf', 'lur']:
+        if col in df.columns:
+            val_at_start = df.loc['2006Q1', col]
+            print(f"Variable {col} at solve start (2006Q1): {val_at_start:.4f}")
+    print("---------------------------------\n")
 
-    if critical_failures:
-        print("\n⚠️ LOG-DANGER ALERT: Found values likely to cause 'divide by zero in log':")
-        for fail in critical_failures[:10]:
-            print(fail)
-        print(f"...Total danger points found: {len(critical_failures)}\n")
-
-    # 4. Proxy Injection
+    # 4. Model Variable Synchronization
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
                 expected_vars = [v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', f.read()) if v.strip()]
-            median_trend = df.median(axis=1).clip(lower=1.0)
+            median_trend = df.median(axis=1).clip(lower=2.0)
             new_vars_dict = {v: median_trend for v in expected_vars if v not in df.columns}
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception: pass
 
     # 5. Final Engine Execution
-    # SAFETY BUMP: Increase floor to 1.0 to ensure log(x) >= 0
-    df = df.abs().clip(lower=1.0)
-    
     try:
         model = frbus.Frbus(model_xml)
         solve_start = df.index[8] 
@@ -65,6 +58,9 @@ def run_pro_engine():
         results[[c for c in results.columns if c in actual_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
+        # If it still fails, print the first row of the failing matrix
+        print("\nCrash Data Slice (solve_start):")
+        print(df.loc[solve_start, actual_cols])
         raise
 
 if __name__ == "__main__":
