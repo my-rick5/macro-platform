@@ -22,7 +22,7 @@ def run_pro_engine():
     
     df = pd.concat(data_frames, axis=1).sort_index()
 
-    # 2. XML Scraper with Evolution-Based Injection
+    # 2. XML Scraper with Stationary Noise
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -34,55 +34,47 @@ def run_pro_engine():
             
             if missing_vars:
                 print(f"🛰️ Scraper found {len(expected_vars)} variables. Injecting {len(missing_vars)} series...")
-                
-                # We need a timeline index for drift calculation
-                t = np.arange(len(df))
                 new_data = {}
-                
                 for var in missing_vars:
-                    # Logic: Start at a safe baseline and add 0.5% quarterly drift + noise
-                    # This ensures (x_t - x_t-1) is never zero.
-                    if any(r in var for r in ['mpt', 'lur', 'pi', 'r']): 
-                        base = 0.05 # 5% baseline for rates
-                    else: 
-                        base = 1.0
-                    
-                    # Trend = base * (1.005^t) + small random noise
-                    series = base * (1.005 ** t) + np.random.uniform(1e-5, 2e-5, size=len(df))
-                    new_data[var] = series
+                    # Logic: Use 1.0 for levels, 0.05 for rates. 
+                    # Add stationary noise so t and t-1 are never the same.
+                    base = 0.05 if any(r in var for r in ['mpt', 'lur', 'pi', 'r']) else 1.0
+                    # Mean + small random variance (jitter)
+                    new_data[var] = base + np.random.normal(0, 0.001, size=len(df))
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Stabilized Padding
+    # 3. Flat Padding with Jitter
     df = df.sort_index()
     start_date = df.index.min()
-    padding_dates = [start_date - i for i in range(1, 9)]
+    padding_dates = [start_date - i for i in range(1, 13)] # Increased to 12 quarters (3 years)
     
-    # Back-extrapolate the padding so it matches the trend of the data
-    padding_df = df.iloc[0].to_frame().T.reindex(pd.PeriodIndex(padding_dates, freq='Q'))
-    for i, date in enumerate(reversed(padding_dates)):
-        padding_df.loc[date] = df.iloc[0] * (0.995 ** (i + 1))
+    # Create padding based on the first real observation value
+    padding_df = pd.DataFrame(index=pd.PeriodIndex(padding_dates, freq='Q'), columns=df.columns)
+    for col in df.columns:
+        first_val = df[col].iloc[0]
+        # Fill padding with the first value + jitter to keep it stationary but non-zero delta
+        padding_df[col] = first_val + np.random.normal(0, 0.001, size=len(padding_dates))
 
     df = pd.concat([padding_df, df]).sort_index()
-    df = df.ffill().bfill().clip(lower=1e-5).copy()
+    
+    # Final Safety: Clip to 0.01 to ensure logs never see 0 or negatives
+    df = df.ffill().bfill().clip(lower=0.01).copy()
 
     df.to_csv(os.path.join(results_dir, "master_input_matrix.csv"))
+    print(f"📊 Final Matrix Stats: Min={df.min().min():.4f}, Max={df.max().max():.4f}")
 
     # 4. Engine Solve
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
-        # Use start_date to skip the artificial trend in padding
         results = model.init_trac(start_date, df.index.max(), df)
         print("✅ Engine Solve Successful.")
         results.to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
-        # Print the first few rows of a suspected bad column
-        bad_col = df.columns[40] # Sample a scraped column
-        print(f"🔍 Sample Series ({bad_col}):\n{df[bad_col].head()}")
         raise
 
 if __name__ == "__main__":
