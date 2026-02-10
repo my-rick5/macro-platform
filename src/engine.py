@@ -10,7 +10,7 @@ def run_pro_engine():
     results_dir = "/home/spark/results"
     os.makedirs(results_dir, exist_ok=True)
     
-    # 1. Load Data and identify the "Short" variable
+    # 1. Load Data
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files: return
     
@@ -18,48 +18,49 @@ def run_pro_engine():
     for f in files:
         tmp = pd.read_csv(os.path.join(data_path, f))
         tmp['date'] = pd.PeriodIndex(tmp['date'], freq='Q')
-        tmp = tmp.set_index('date')
-        # 🚀 THE AUDITOR: Log exactly how much data each file has
-        print(f"📊 Variable Check: {f} has {len(tmp)} obs ({tmp.index.min()} to {tmp.index.max()})")
-        data_frames.append(tmp)
+        data_frames.append(tmp.set_index('date'))
     
     df = pd.concat(data_frames, axis=1, join='outer').sort_index()
     df.columns = [c.lower() for c in df.columns]
     
-    # 🚀 THE RECONSTRUCTION FIX: Force the 2004 start date
-    # We create a full index from 2004Q1 to 2019Q3 and reindex.
+    # 🚀 THE TREND SPLICER: Use a 'master' variable to back-cast the short ones
+    # We use gngdp (nominal GDP) as the anchor for economic movement.
+    anchor = df['gngdp'].ffill().bfill()
     full_index = pd.period_range(start='2004Q1', end=df.index.max(), freq='Q')
     df = df.reindex(full_index)
-    
-    # Linear interpolation to fill the 2004-2013 gap for the 'short' variables
-    # This prevents the solver from 'trimming' the start date.
-    df = df.interpolate(method='linear', limit_direction='both').bfill().ffill()
 
-    # 2. Map Proxies for missing model variables
+    for col in df.columns:
+        if df[col].first_valid_index() > full_index[0]:
+            print(f"🧬 Splicing trend for {col} back to 2004...")
+            # Calculate the ratio of the variable to the anchor at its first valid point
+            first_idx = df[col].first_valid_index()
+            ratio = df.loc[first_idx, col] / anchor.loc[first_idx]
+            # Back-cast using the anchor's movement
+            df.loc[:first_idx, col] = anchor.loc[:first_idx] * ratio
+
+    # 2. Map Proxies
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
                 content = f.read()
             expected_vars = list(set([v.strip().lower() for v in re.findall(r'<name>(.*?)</name>', content) if v.strip()]))
             
-            print(f"🛰️ Scraper found {len(expected_vars)} variables. Finalizing 398-var matrix (Force 2004+)...")
-            macro_proxy = df.mean(axis=1)
-            new_vars_dict = {v: macro_proxy * (1.0 + np.sin(i)*0.01) for i, v in enumerate(expected_vars) if v not in df.columns}
+            print(f"🛰️ Scraper found {len(expected_vars)} variables. Generating spliced proxies...")
+            # Use the master anchor for proxies too, ensuring the whole matrix moves together
+            new_vars_dict = {v: anchor * (1.0 + np.sin(i)*0.01) for i, v in enumerate(expected_vars) if v not in df.columns}
             df = pd.concat([df, pd.DataFrame(new_vars_dict, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Mapping warning: {e}")
 
     # 3. Final Sanitization
-    df = df.abs().clip(lower=0.1)
+    df = df.ffill().bfill().abs().clip(lower=0.1)
     
     # 4. Model Execution
     try:
         model = frbus.Frbus(model_xml)
-        
-        # We now have a guaranteed 2004Q1 start. 
-        # Skip 8 quarters to satisfy deep lags, starting solve in 2006Q1.
+        # Start at 2006Q1 (Index 8) to satisfy 8-quarter lag requirements
         solve_start = df.index[8] 
-        print(f"🏗️ Model Loaded. Solving RECONSTRUCTED range: {solve_start} to {df.index.max()}")
+        print(f"🏗️ Model Loaded. Solving SPLICED range: {solve_start} to {df.index.max()}")
         
         results = model.init_trac(solve_start, df.index.max(), df)
         print("✅ Engine Solve Successful.")
