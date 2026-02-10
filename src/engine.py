@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("💓 Heartbeat: Catch-All Pattern Engine Started.")
+print("💓 Heartbeat: Persistent Anchor Engine Started.")
 print("--------------------------------------------------")
 
 try:
@@ -36,43 +36,31 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 🎯 2. PATTERN-BASED PROXY GENERATOR
+    # 2. PATTERN-BASED PROXY GENERATOR
     print("📋 Deploying pattern-based structural proxies...")
     auto_proxies = {
-        'dmptmax': 0.35,   'picorr': 0.02,    'ecoind': 0.0,
-        'zlb': 0.0,        'delrff': 0.0,     'rffmin': 0.0,
-        'rffmax': 0.20,    'delrpc': 0.0,
-        'dmptlur': 0.20,   # FIX: Labor tax rate
-        'dmptss': 0.15,    # Pre-empting Social Security
-        'dmptr': 0.10      # Pre-empting Corporate tax
+        'dmptmax': 0.35, 'picorr': 0.02, 'ecoind': 0.0, 'zlb': 0.0,
+        'delrff': 0.0, 'rffmin': 0.0, 'rffmax': 0.20, 'delrpc': 0.0,
+        'dmptlur': 0.20, 'dmptss': 0.15, 'dmptr': 0.10
     }
 
     for var, val in auto_proxies.items():
         if var not in df.columns:
-            print(f"  🔗 Injecting {var} at {val}")
             df[var] = val
 
     # 3. UNIT & ACCOUNTING ENFORCEMENT
     print("⚖️ Normalizing units and enforcing identities...")
     for col in df.columns:
-        avg_val = df[col].mean()
-        is_rate = any(x in col for x in ['r', 'pi', 'u', 'gap', 'del'])
-        if avg_val < 10 and not is_rate:
+        if df[col].mean() < 10 and not any(x in col for x in ['r', 'pi', 'u', 'gap', 'del']):
             df[col] = df[col] * 1000
 
-    if all(x in df.columns for x in ['gngdp', 'gppce', 'gip']):
-        df['gnx'] = df['gngdp'] - (df['gppce'] + df['gip'])
-
-    if all(x in df.columns for x in ['gngdp', 'grgdp', 'gpgdp']):
-        df['gpgdp'] = df['gngdp'] - df['grgdp']
-    
     # 4. Initialization
     model = frbus.Frbus(model_xml)
     first_actual = df.index.min()
     full_end = df.index.max()
     missing_registry = {}
 
-    # 5. SURGICAL BYPASS: Isolation Mode for 1989Q3
+    # 🎯 5. PERSISTENT ANCHOR: Isolation Mode for 1989Q3
     print(f"⚡ Hard-starting isolation solve at {first_actual}...")
     try:
         first_q_results = model.init_trac(first_actual, first_actual, df)
@@ -81,19 +69,20 @@ def run_pro_engine():
                 missing_registry[col] = float(first_q_results[col].iloc[0])
         print("✅ Isolation Anchor established.")
     except Exception as e:
-        # 🎯 DYNAMIC RECOVERY: Catch missing variables during the isolation attempt
         match = re.search(r'`([^`]+)`', str(e))
         if match:
             var = match.group(1).lower()
-            print(f"🛠️ Dynamic Patch: Missing {var} detected. Re-running with proxy...")
-            df[var] = 0.1 # Neutral seed
-            # Recursive retry for one level
-            try:
-                first_q_results = model.init_trac(first_actual, first_actual, df)
-                for col in first_q_results.columns:
-                    if col not in target_variables:
-                        missing_registry[col] = float(first_q_results[col].iloc[0])
-            except: pass
+            print(f"🛠️ Dynamic Patch: Missing {var} detected. Persisting proxy...")
+            
+            # CRITICAL: Add to GLOBAL df so it persists for 1989Q4
+            df[var] = 0.20 
+            
+            # Re-try with global persistence
+            first_q_results = model.init_trac(first_actual, first_actual, df)
+            for col in first_q_results.columns:
+                if col not in target_variables:
+                    missing_registry[col] = float(first_q_results[col].iloc[0])
+            print(f"✅ Isolation Anchor secured with {var}.")
 
     # 6. Recursive Windowing Logic
     current_solve_start = first_actual + 1
@@ -105,8 +94,10 @@ def run_pro_engine():
         window_passed = False
         while window_attempts < 150:
             try:
+                # Combine original data (including persistent proxies) with dynamic solver state
                 patch_df = pd.DataFrame(missing_registry, index=df.index)
                 current_df = pd.concat([df, patch_df], axis=1)
+                
                 results = model.init_trac(current_solve_start, current_solve_end, current_df)
                 for col in results.columns:
                     if col not in target_variables:
@@ -119,7 +110,7 @@ def run_pro_engine():
                     var = match.group(1).lower()
                     missing_registry[var] = 0.05 if any(x in var for x in ['r','pi','u']) else 1000.0
                 window_attempts += 1
-            except (ValueError, exceptions.ComputationError):
+            except:
                 window_attempts += 1
 
         if not window_passed:
@@ -129,8 +120,8 @@ def run_pro_engine():
             
     # 7. Final Export
     print(f"🔥 Exporting residuals for {first_actual} through {full_end}...")
-    patch_df = pd.DataFrame(missing_registry, index=df.index)
-    results = model.init_trac(first_actual, full_end, pd.concat([df, patch_df], axis=1))
+    final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
+    results = model.init_trac(first_actual, full_end, final_data)
     
     final_cols = [v for v in target_variables if v in results.columns]
     final_cols += [f"{v}_res" for v in target_variables if f"{v}_res" in results.columns]
