@@ -51,7 +51,7 @@ def run_pro_engine():
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
             # Use 'solve' to bypass Jacobian inversion for the crash window
-            results = model.solve(current_solve_start, current_solve_start, current_df, init=true)
+            results = model.solve(current_solve_start, current_solve_start, current_df, init=True)
             
             for col in results.columns:
                 if col not in target_variables:
