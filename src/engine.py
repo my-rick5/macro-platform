@@ -18,7 +18,12 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     actual_data_cols = list(df.columns)
 
-    # 2. Unit-Standard Balanced Growth Injection
+    # ECONOMIST'S ANCHOR: Use the sum of real data as the magnitude baseline
+    # This ensures dummy components (Consumption/Investment) are smaller than the totals
+    macro_anchor = df[actual_data_cols].sum(axis=1).mean()
+    print(f"📊 Macro Anchor Scale: {macro_anchor:.2f}")
+
+    # 2. Proportion-Safe Injection
     if os.path.exists(model_xml):
         try:
             with open(model_xml, 'r', encoding='utf-8') as f:
@@ -31,34 +36,32 @@ def run_pro_engine():
                 t = np.arange(len(df))
                 new_data = {}
                 
-                # REFINED ANCHOR: 0.5% growth is standard, but we start at 1.0 (Unit-Standard)
-                # This prevents 'overflow encountered in exp' by keeping levels realistic.
+                # Balanced Growth Path at 0.5% per quarter
                 master_growth = 1.005 ** t
                 
                 for i, var in enumerate(missing_vars):
-                    # Each variable gets a unique fraction of 1.0 to keep identities positive
-                    # and ensure the Jacobian matrix remains non-singular.
-                    level_offset = 1.0 + (i * 0.0001)
-                    new_data[var] = level_offset * master_growth
+                    # Components get a unique fraction of the Macro Anchor (0.01% to 1%)
+                    # This guarantees that Total (Anchor) - Component is always positive
+                    level_fraction = 0.0001 + (i * 0.00002)
+                    new_data[var] = macro_anchor * level_fraction * master_growth
                 
                 df = pd.concat([df, pd.DataFrame(new_data, index=df.index)], axis=1)
         except Exception as e:
             print(f"⚠️ Scraper warning: {e}")
 
-    # 3. Buffer and Numerical Safety
+    # 3. Buffer and Numerical Floor
     first_obs = df.index.min()
     padding = pd.DataFrame(index=pd.PeriodIndex([first_obs - i for i in range(1, 41)], freq='Q'), columns=df.columns)
     for col in df.columns: padding[col] = df[col].iloc[0]
     
-    # We clip at 0.1 to avoid the log boundary while staying within the unit range
-    df = pd.concat([padding, df]).sort_index().ffill().bfill().clip(lower=0.1)
+    # Clip at 1.0 to ensure log(x) >= 0, providing a safety buffer for identities
+    df = pd.concat([padding, df]).sort_index().ffill().bfill().clip(lower=1.0)
 
     try:
         model = frbus.Frbus(model_xml)
         print("🏗️ Model Loaded. Calculating Residuals...")
         results = model.init_trac(first_obs, df.index.max(), df)
         print("✅ Engine Solve Successful.")
-        # Filter for only your 15 real variables for the final output
         results[[c for c in results.columns if c.lower() in actual_data_cols]].to_csv(os.path.join(results_dir, "residuals.csv"))
     except Exception as e:
         print(f"❌ Engine Failed: {e}")
