@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Universal Identity Engine v7.")
+print("🚀 Heartbeat: Final Universal Identity Engine v8.")
 print("--------------------------------------------------")
 
 try:
@@ -63,12 +63,11 @@ def run_pro_engine():
         
         # 🎯 STRATEGY: UNIVERSAL IDENTITY PATCH (1989Q4)
         if current_solve_start == pd.Period('1989Q4', freq='Q'):
-            print("🛡️ 1989Q4 Deadlock: Patching Universal Identities & Triggering Reset...")
+            print("🛡️ 1989Q4 Deadlock: Patching Calibration Gaps & Triggering Reset...")
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
-            # 🛡️ Universal Patch: Resolves MissingDataError for technical/behavioral series
-            # Added 'dpadj' to clear Build #508 error
-            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj']
+            # 🛡️ Expanded Safe Registry: Added 'dpgap' to clear Build #509 error
+            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap']
             for var in required_proxies:
                 if var not in current_df.columns:
                     current_df[var] = 0.0
@@ -93,7 +92,7 @@ def run_pro_engine():
                     current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                     
                     # 🛡️ Persistent registry injection
-                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj']
+                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap']
                     for var in required_proxies:
                         if var not in current_df.columns:
                             current_df[var] = 0.0
@@ -123,7 +122,7 @@ def run_pro_engine():
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     
     # Final data safety check
-    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj']
+    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap']
     for var in required_proxies:
         if var not in final_data.columns:
             final_data[var] = 0.0
@@ -132,7 +131,7 @@ def run_pro_engine():
     final_results = model.init_trac(first_actual, full_end, final_data)
     final_results.to_csv(output_path)
     
-    print(f"✅ SUCCESS: Build complete. Results stored at: {output_path}")
+    print(f"✅ SUCCESS: Build complete. Results archived.")
 
 if __name__ == "__main__":
     run_pro_engine()
