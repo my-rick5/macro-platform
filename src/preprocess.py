@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #671 Final Strike Hunter)... ")
+    print(f"🎬 Starting Preprocessor (Build #673 Nuclear Hunter)... ")
     os.makedirs(output_dir, exist_ok=True)
     
     try:
@@ -22,45 +22,39 @@ def clean_fed_excel(excel_path, output_dir):
             df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
             df.rename(columns={df.columns[0]: 'date_raw'}, inplace=True)
             
-            # --- FINAL STRIKE HUNTER ---
             candidates = []
             for c in df.columns:
                 if c == 'date_raw': continue
                 c_str = str(c).lower()
-                converted = pd.to_numeric(df[c], errors='coerce')
                 
-                # Check how many actual numbers are in the column
+                # 1. VERSION GUARD: Reject anything with multiple dots (e.g., 3.8.3)
+                if c_str.count('.') >= 2: continue
+                
+                converted = pd.to_numeric(df[c], errors='coerce')
                 valid_count = converted.notna().sum()
                 
-                # 1. Density Check: Must have at least 150 points for a full series
+                # 2. STRICT VALIDATION: High density + Realistic Macro Mean
                 if valid_count > 150: 
-                    # 2. Macro Range Check: 
-                    # Real unemployment/GDP rates average between -10 and 25.
-                    # Dates (20100310) or Versions (3.8.3) will fail this.
                     avg_val = converted.mean()
                     if not (-10 < avg_val < 25): continue
                     
-                    # 3. Variance Check: Must be dynamic
-                    if converted.std() < 0.01: continue
+                    # 3. KEYWORD ENFORCEMENT: Must have a relevant label
+                    keywords = ['rate', 'unemp', 'lur', 'val', 'adj', 'index', var_name]
+                    if not any(k in c_str for k in keywords): continue
                     
-                    # 4. Keyword Scoring
-                    is_date_like = converted.abs().max() > 1000
-                    keywords = ['rate', 'unemp', 'lur', 'val', 'adj', var_name]
-                    has_keyword = any(k in c_str for k in keywords)
-                    
-                    score = (15 if has_keyword else 0) - (100 if is_date_like else 0)
+                    # 4. SCORING: Reward exact model matches and 'rate'
+                    score = (50 if any(k in c_str for k in [var_name, 'rate']) else 10)
                     candidates.append({'col': c, 'data': converted, 'score': score, 'count': valid_count})
             
             if candidates:
-                # Prioritize by keyword score, then by the most data points (density)
                 winner = sorted(candidates, key=lambda x: (x['score'], x['count']), reverse=True)[0]
                 df[var_name] = winner['data']
-                print(f"   🎯 FINAL Winner for '{sheet}': '{winner['col']}' ({winner['count']} pts, Mean: {winner['data'].mean():.2f})")
+                print(f"   🎯 NUCLEAR Winner for '{sheet}': '{winner['col']}' ({winner['count']} pts)")
             else:
-                print(f"   ⚠️ WARNING: No valid high-density candidates found in '{sheet}'.")
+                print(f"   ⚠️ WARNING: No valid economic series found in '{sheet}'.")
                 continue
 
-            # --- DATE PARSING & DEDUPLICATION ---
+            # Date Parsing & Final Deduplication
             def parse_period(val):
                 try:
                     f_val = float(val)
@@ -70,11 +64,9 @@ def clean_fed_excel(excel_path, output_dir):
                 except: return None
 
             df['date'] = df['date_raw'].apply(parse_period)
-            final_df = df.dropna(subset=['date', var_name])
-            if not final_df.empty:
-                final_df = final_df.groupby('date')[var_name].last().reset_index()
-                final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
-                print(f"   ✅ SUCCESS: Saved {var_name}.csv")
+            final_df = df.dropna(subset=['date', var_name]).groupby('date')[var_name].last().reset_index()
+            final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
+            print(f"   ✅ SUCCESS: Saved {var_name}.csv")
                 
         except Exception as e:
             print(f"   ❌ Error processing sheet '{sheet}': {e}")
