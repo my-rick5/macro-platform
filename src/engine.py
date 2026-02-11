@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 def run_pro_engine():
-    print("🚀 Heartbeat: Entropy-Restored Engine (Build #561)")
+    print("🚀 Heartbeat: Full Entropy-Discovery Hybrid (Build #562)")
     
     # 1. Environment & Path Setup
     working_dir = os.getcwd()
@@ -27,6 +27,7 @@ def run_pro_engine():
         print("❌ ERROR: No data files found.")
         sys.exit(1)
 
+    # Combine data and ensure index is sorted
     df = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
         .assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q'))
@@ -34,39 +35,43 @@ def run_pro_engine():
     ], axis=1).sort_index()
     df.columns = [c.lower() for c in df.columns]
 
-    # 3. Model Initialization
+    # 3. Anchor Adjustment (The Fix for Build #561 Error)
+    # The solver starts at 1989Q4, so we must ensure 1989Q3 exists in the data for lags.
+    actual_start = pd.Period("1989Q3", freq="Q")
+    if actual_start not in df.index:
+        # If preprocessor didn't provide it, we back-fill the first available obs
+        df.loc[actual_start] = df.iloc[0].values
+        df = df.sort_index()
+
+    # 4. Model Initialization
     model = frbus.Frbus(model_xml)
-    solve_start = df.index.min() + 1
+    solve_start = pd.Period("1989Q4", freq="Q")
     solve_end = df.index.max()
     
-    # Discovery Registry (To track what we find)
     registry_df = pd.DataFrame(index=df.index)
     target_variables = list(df.columns)
     
     # Entropy Calibration Settings
     max_entropy_cycles = 5
     entropy_threshold = 1e-6
-    
-    # 🎯 FIX: Initialize results safely
     results = None
     
-    print(f"📈 Initializing Entropy-Discovery Loop: {solve_start} to {solve_end}")
+    print(f"📈 Solving from {solve_start} to {solve_end} with 1989Q3 anchor.")
 
     for cycle in range(1, max_entropy_cycles + 1):
         window_passed = False
         attempts = 0
         
-        # 🎯 THE ENTROPY LOGIC: Recursive Discovery Loop
-        # We set a high limit (500) because the model has many variables to initialize.
-        while not window_passed and attempts < 500:
+        # Inner loop to discover variables (dmptmax, uyl, etc.)
+        while not window_passed and attempts < 600:
             try:
-                # Merge base data with discovered variables
+                # Merge base data with discovered series
                 current_df = pd.concat([df, registry_df], axis=1).fillna(1.0).copy()
                 
-                # Attempt to solve
+                # Core Solver
                 results = model.init_trac(solve_start, solve_end, current_df)
                 
-                # If successful, capture discovered variables for next pass
+                # Sync discovered variables back to registry
                 for col in results.columns:
                     if col not in target_variables:
                         registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 1.0)
@@ -75,49 +80,48 @@ def run_pro_engine():
                 
             except Exception as e:
                 msg = str(e)
-                # 🛡️ CATCH & PATCH: Handle 'dmptmax' and other missing vars
+                # Catch MissingDataError during discovery
                 match = re.search(r'`([^`]+)`', msg)
                 if match:
                     missing_var = match.group(1).lower()
-                    if attempts % 10 == 0:
-                        print(f"🛡️ Discovery (Attempt {attempts}): Initializing `{missing_var}`")
+                    if attempts % 50 == 0:
+                        print(f"🛡️ Discovery (Attempt {attempts}): Found `{missing_var}`")
                     registry_df[missing_var] = 1.0
                     registry_df = registry_df.copy() # De-fragment
                     attempts += 1
                 else:
-                    print(f"❌ Unrecoverable Math Error in cycle {cycle}: {msg}")
+                    print(f"❌ Critical Error in cycle {cycle}: {msg}")
                     sys.exit(1)
 
-        # 🎯 ENTROPY CALIBRATION
+        # Calibration Nudge
         if results is not None:
             entropy_score = np.mean(np.square(results.values))
             print(f"📊 Cycle {cycle} Entropy Score: {entropy_score:.8f}")
             
             if entropy_score < entropy_threshold:
-                print("✨ Calibration threshold met.")
+                print("✨ Calibration achieved.")
                 break
             
-            # Nudge input data for next entropy cycle
+            # Re-solve with residual feedback to minimize entropy
             df = df.add(results * 0.1, fill_value=0)
         else:
-            print("⚠️ Warning: Discovery phase failed to produce results.")
+            print("⚠️ Warning: Discovery failed to reach results.")
             break
 
-    # 4. Final Exports (Including Lite Version)
+    # 5. Final Exports
     if results is not None:
-        # Full Export
+        # Export Full Residuals
         full_path = os.path.join(results_dir, "residuals.csv")
         results.to_csv(full_path)
         
-        # Lite Export
+        # Export Lite Residuals
         lite_path = os.path.join(results_dir, "residuals_lite.csv")
         lite_vars = ['cve', 'y', 'pit', 'unr', 'rff'] 
-        available_vars = [v for v in lite_vars if v in results.columns]
-        results[available_vars].to_csv(lite_path)
+        available = [v for v in lite_vars if v in results.columns]
+        results[available].to_csv(lite_path)
         
-        print(f"✅ SUCCESS: Exported residuals.csv and residuals_lite.csv")
+        print(f"✅ SUCCESS: Exported both residuals.csv and residuals_lite.csv")
     else:
-        print("❌ FATAL: Engine failed to generate results.")
         sys.exit(1)
 
 if __name__ == "__main__":
