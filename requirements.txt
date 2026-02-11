@@ -15,4 +15,3 @@ pytest-mock
 # --- Infrastructure ---
 # google-cloud-storage (If you're pulling macro data from GCP)
 psutil
-sys

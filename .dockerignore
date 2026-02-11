@@ -21,3 +21,8 @@ mlruns/
 output/
 data/
 *.json
+
+.git
+results/
+data/processed/
+*.csv
