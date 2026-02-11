@@ -3,11 +3,10 @@ import os
 import re
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #659 Production)... ")
+    print(f"🎬 Starting Preprocessor (Build #661 Magnitude Guard)... ")
     os.makedirs(output_dir, exist_ok=True)
     xls = pd.ExcelFile(excel_path)
     
-    # Mapping for target variables
     mapping = {'unemp': 'adjlegrt', 'lur': 'adjlegrt', 'gdp': 'anngr', 'anngr': 'anngr'}
     
     for sheet in xls.sheet_names:
@@ -19,13 +18,25 @@ def clean_fed_excel(excel_path, output_dir):
             df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
             df.rename(columns={df.columns[0]: 'date_raw'}, inplace=True)
             
-            # Identify data column (must be numeric, values < 1000)
-            data_col = next((c for c in df.columns if c != 'date_raw' and 
-                             pd.to_numeric(df[c], errors='coerce').notna().sum() > 5), None)
-            if not data_col: continue
-            df[var_name] = pd.to_numeric(df[data_col], errors='coerce')
+            # --- UPDATED HUNTER LOGIC ---
+            data_col = None
+            for c in df.columns:
+                if c == 'date_raw': continue
+                converted = pd.to_numeric(df[c], errors='coerce')
+                
+                # Magnitude Guard: Dates (YYYYMMDD) are usually > 19000000.
+                # Unemployment and GDP residuals should be < 1000.
+                if converted.notna().sum() > 5 and converted.abs().max() < 1000:
+                    df[var_name] = converted
+                    data_col = c
+                    print(f"   🎯 Valid economic data found in column: '{c}'")
+                    break
+            
+            if not data_col:
+                print(f"   ⚠️ WARNING: Could not find valid economic data in '{sheet}'")
+                continue
 
-            # Handle Decimal Years (e.g. 1967.2 -> 1967Q2)
+            # Decimal Date Parsing
             def parse_period(val):
                 try:
                     f_val = float(val)
@@ -41,7 +52,7 @@ def clean_fed_excel(excel_path, output_dir):
             if not final_df.empty:
                 final_df = final_df.groupby('date')[var_name].last().reset_index()
                 final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
-                print(f"   ✅ Saved unique series: {var_name}")
+                print(f"   ✅ Saved deduplicated series: {var_name}")
                 
         except Exception as e:
             print(f"   ❌ Error in {sheet}: {e}")
