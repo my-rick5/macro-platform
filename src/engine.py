@@ -1,10 +1,11 @@
 import pandas as pd
 import os
+import re
 import sys
 import numpy as np
 
 def run_pro_engine():
-    print("🚀 Heartbeat: Entropy-Calibrated Macro Engine (Build #548)")
+    print("🚀 Heartbeat: Entropy-Discovery Hybrid Engine (Build #553)")
     
     # 1. Environment & Path Setup
     working_dir = os.getcwd()
@@ -20,10 +21,10 @@ def run_pro_engine():
         print(f"❌ FATAL: Dependency Load Error: {e}")
         sys.exit(1)
 
-    # 2. Data Loading (Build #547 Stable Path)
+    # 2. Data Loading (Stable Ingestion)
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     if not files:
-        print("❌ ERROR: No data files found.")
+        print("❌ ERROR: No data files found in data/processed")
         return
 
     df = pd.concat([
@@ -33,49 +34,74 @@ def run_pro_engine():
     ], axis=1).sort_index()
     df.columns = [c.lower() for c in df.columns]
 
-    # 3. Model Solver with Entropy Cycles
+    # 3. Model Initialization
     model = frbus.Frbus(model_xml)
     solve_start = df.index.min() + 1
     solve_end = df.index.max()
     
-    # --- Entropy Configuration ---
+    # Discovery Registry to handle missing variables like dmptmax
+    registry_df = pd.DataFrame(index=df.index)
+    target_variables = list(df.columns)
+    
+    # Entropy Calibration Settings
     max_entropy_cycles = 5
     entropy_threshold = 1e-6
-    current_df = df.copy()
     
-    print(f"📈 Initializing calibration solve: {solve_start} to {solve_end}")
-    
+    print(f"📈 Initializing Hybrid solve: {solve_start} to {solve_end}")
+
     for cycle in range(1, max_entropy_cycles + 1):
-        print(f"🔄 Entropy Cycle {cycle}/{max_entropy_cycles}...")
+        window_passed = False
+        attempts = 0
         
-        # Core Solver Call
-        results = model.init_trac(solve_start, solve_end, current_df)
-        
-        # Calculate Calibration Error (Mean Squared Residuals as Entropy Proxy)
-        # We focus on the delta between the solve and the target data
+        # Discovery loop within each entropy cycle to handle MissingDataErrors
+        while not window_passed and attempts < 50:
+            try:
+                # Merge base data with discovered variables and de-fragment
+                current_df = pd.concat([df, registry_df], axis=1).fillna(1.0).copy()
+                
+                print(f"🔄 Entropy Cycle {cycle}/{max_entropy_cycles} (Attempt {attempts})...")
+                results = model.init_trac(solve_start, solve_end, current_df)
+                
+                # Capture and update discovered variables (residuals/identities)
+                for col in results.columns:
+                    if col not in target_variables:
+                        registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 1.0)
+                
+                window_passed = True
+                
+            except Exception as e:
+                msg = str(e)
+                # Catch MissingDataError for exogenous variables like 'dmptmax'
+                match = re.search(r'`([^`]+)`', msg)
+                if match:
+                    missing_var = match.group(1).lower()
+                    print(f"🛡️ Discovery: Initializing missing variable `{missing_var}`")
+                    registry_df[missing_var] = 1.0
+                    registry_df = registry_df.copy() # Stay de-fragmented
+                    attempts += 1
+                else:
+                    print(f"❌ Unrecoverable Math Error in cycle {cycle}: {msg}")
+                    sys.exit(1)
+
+        # Calibration Step: Calculate Entropy (Mean Squared Residuals)
         entropy_score = np.mean(np.square(results.values))
-        print(f"📊 Current Entropy Score: {entropy_score:.8f}")
+        print(f"📊 Cycle {cycle} Entropy Score: {entropy_score:.8f}")
         
         if entropy_score < entropy_threshold:
-            print("✨ Calibration achieved. Breaking cycles.")
+            print("✨ Calibration threshold met.")
             break
             
-        # If entropy is too high, update current_df with a portion of the residuals 
-        # to "nudge" the calibration for the next cycle
-        current_df = current_df.add(results * 0.1, fill_value=0)
-        
-    final_results = results
+        # Nudge input data for the next entropy cycle
+        df = df.add(results * 0.1, fill_value=0)
 
     # 4. Final Exports
-    # --- Full Export ---
     full_path = os.path.join(results_dir, "residuals.csv")
-    final_results.to_csv(full_path)
+    results.to_csv(full_path)
     
-    # --- Lite Export ---
     lite_path = os.path.join(results_dir, "residuals_lite.csv")
     lite_vars = ['cve', 'y', 'pit', 'unr', 'rff'] 
-    available_vars = [v for v in lite_vars if v in final_results.columns]
-    final_results[available_vars].to_csv(lite_path)
+    available_vars = [v for v in lite_vars if v in results.columns]
+    results[available_vars].to_csv(lite_path)
     
     print(f"✅ SUCCESS: Exported residuals.csv and residuals_lite.csv")
 
