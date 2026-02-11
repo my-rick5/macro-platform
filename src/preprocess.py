@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Magnitude Guard Fix)... ")
+    print(f"🎬 Starting Preprocessor (Build #666 Strict Hunter)... ")
     os.makedirs(output_dir, exist_ok=True)
     
     try:
@@ -11,7 +11,6 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    # Map Sheet Names to Model Variable Names
     mapping = {
         'unemp': 'adjlegrt', 
         'lur': 'adjlegrt', 
@@ -30,24 +29,31 @@ def clean_fed_excel(excel_path, output_dir):
             df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
             df.rename(columns={df.columns[0]: 'date_raw'}, inplace=True)
             
-            # --- HUNTER LOGIC WITH MAGNITUDE GUARD ---
-            data_col = None
+            # --- STRICT HUNTER SCORING LOGIC ---
+            candidates = []
             for c in df.columns:
                 if c == 'date_raw': continue
                 
+                # Force numeric conversion to identify data quality
                 converted = pd.to_numeric(df[c], errors='coerce')
+                valid_count = converted.notna().sum()
                 
-                # MAGNITUDE GUARD:
-                # Skips any column where the max value is > 1000.
-                # This ignores YYYYMMDD dates (like 20100310.0) and finds real rates.
-                if converted.notna().sum() > 5 and converted.abs().max() < 1000:
-                    df[var_name] = converted
-                    data_col = c
-                    print(f"   🎯 Valid economic data found in '{sheet}' -> column: '{c}'")
-                    break
+                if valid_count > 5:
+                    # Score based on range (is it a date?) and header keywords
+                    is_date_like = converted.abs().max() > 1000
+                    has_keyword = any(k in c.lower() for k in ['unemp', 'lur', 'rate', 'val'])
+                    
+                    # Penalty for large numbers (dates), bonus for relevant headers
+                    score = (10 if has_keyword else 0) - (50 if is_date_like else 0)
+                    candidates.append({'col': c, 'data': converted, 'score': score})
             
-            if not data_col:
-                print(f"   ⚠️ WARNING: No valid economic series found in '{sheet}'. Skipping.")
+            # Select the candidate with the highest score
+            if candidates:
+                winner = sorted(candidates, key=lambda x: x['score'], reverse=True)[0]
+                df[var_name] = winner['data']
+                print(f"   🎯 Winner for '{sheet}': '{winner['col']}' (Score: {winner['score']})")
+            else:
+                print(f"   ⚠️ WARNING: No valid candidates found in '{sheet}'.")
                 continue
 
             # --- DECIMAL DATE PARSING ---
@@ -58,8 +64,7 @@ def clean_fed_excel(excel_path, output_dir):
                     rem = f_val - year
                     q = 1 if rem < 0.1 else 2 if rem < 0.3 else 3 if rem < 0.6 else 4
                     return f"{year}Q{q}"
-                except:
-                    return None
+                except: return None
 
             df['date'] = df['date_raw'].apply(parse_period)
             
