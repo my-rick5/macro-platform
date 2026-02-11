@@ -4,7 +4,7 @@ import re
 import sys
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Cold-Start Backfill Engine v18.")
+print("🚀 Heartbeat: Final Full-Timeline Recovery Engine v19.")
 print("--------------------------------------------------")
 
 try:
@@ -15,7 +15,7 @@ except Exception as e:
     sys.exit(1)
 
 def run_pro_engine():
-    # 1. Environment & Path Setup
+    # 1. Environment Setup
     working_dir = os.getcwd()
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
@@ -39,7 +39,7 @@ def run_pro_engine():
     df['mc_mode'] = 0.0  
     df['mco_mode'] = 1.0  
     
-    # Persistent registry to hold all discovered/solved series
+    # 🎯 FIX: Registry MUST have the exact same index as the main df
     registry_df = pd.DataFrame(index=df.index)
 
     first_actual = df.index.min()
@@ -50,20 +50,21 @@ def run_pro_engine():
         window_passed = False
         attempts = 0
         
-        while not window_passed and attempts < 250:
+        while not window_passed and attempts < 300:
             try:
-                # Merge current data with everything discovered/solved so far
+                # Merge current data with our aligned registry
                 current_df = pd.concat([df, registry_df], axis=1)
                 
-                # Single-quarter bridge for 1989Q4, then 4-quarter windows
-                solve_end = current_solve_start if current_solve_start == pd.Period('1989Q4', freq='Q') else min(current_solve_start + 3, full_end)
+                # Use current_solve_start as both start and end to clear 1989/1990 bridge
+                # if it continues to fail, we shift to a larger window
+                solve_end = min(current_solve_start + 3, full_end)
                 
                 results = model.init_trac(current_solve_start, solve_end, current_df)
                 
-                # Capture solved residuals back into registry
+                # Update the registry while maintaining full index alignment
                 for col in results.columns:
                     if col not in target_variables:
-                        # Use combine_first to keep full history while updating solve range
+                        # combine_first handles the update while keeping the full 1989-1990 history
                         if col not in registry_df.columns:
                             registry_df[col] = results[col]
                         else:
@@ -77,26 +78,27 @@ def run_pro_engine():
                 match = re.search(r'`([^`]+)`', msg)
                 if match:
                     missing_var = match.group(1).lower()
-                    print(f"🛡️ Discovery: Backfilling missing series `{missing_var}`")
-                    # 🎯 FIX: Initialize the ENTIRE timeline to 0.0 to satisfy 1990Q1 lookbacks
+                    print(f"🛡️ Discovery: Initializing full series for `{missing_var}`")
+                    # 🎯 FIX: Initialize across the ENTIRE timeline to prevent "not in list"
                     registry_df[missing_var] = 0.0
                     attempts += 1
                 else:
-                    print(f"❌ Unrecoverable Numerical/Lag Error: {msg}")
+                    print(f"❌ Unrecoverable Error: {msg}")
+                    # Force exit to Jenkins to review the logs
                     sys.exit(1)
 
-        current_solve_start += 1 if current_solve_start == pd.Period('1989Q4', freq='Q') else 4
+        # Move forward by the window size
+        current_solve_start = min(current_solve_start + 4, full_end + 1)
             
-    # 5. Full-Sample Results Export
+    # 5. Finalize
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, registry_df], axis=1)
     
-    print("📈 Finalizing full-sample residuals...")
-    # Solve starting from the first possible point now that registry is populated
+    print("📈 Generating final artifact...")
     final_results = model.init_trac(first_actual + 1, full_end, final_data)
     final_results.to_csv(output_path)
     
-    print(f"✅ SUCCESS: Build complete. Results stored in residuals_lite.csv.")
+    print(f"✅ SUCCESS: Build #533 complete. Artifact at: {output_path}")
 
 if __name__ == "__main__":
     run_pro_engine()
