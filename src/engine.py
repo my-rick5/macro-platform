@@ -4,96 +4,59 @@ import sys
 import glob
 
 def run_pro_engine():
-    # Identifies the build context in the logs
-    print("🚀 Heartbeat: Full Calibration Engine (init_trac Solver)")
-
-    # Define paths inside the Docker container
+    print("🚀 Heartbeat: Full Calibration Engine (Build #625)")
     working_dir = "/home/spark"
-    external_data_dir = os.path.join(working_dir, "external_data")
     processed_dir = os.path.join(working_dir, "data/processed")
     results_dir = os.path.join(working_dir, "results")
     
-    os.makedirs(results_dir, exist_ok=True)
+    # 1. Load Backbone (X)
+    x_path = os.path.join(working_dir, "external_data/longdata.csv")
+    x_df = pd.read_csv(x_path)
+    x_df['date'] = pd.PeriodIndex(x_df['OBS' if 'OBS' in x_df.columns else 'date'], freq='Q')
+    x_df = x_df.set_index('date').apply(pd.to_numeric, errors='coerce').sort_index()
+    x_df.columns = [c.lower() for c in x_df.columns]
 
-    # 1. 🔍 Locate Backbone X (longdata.csv)
-    x_path = os.path.join(external_data_dir, "longdata.csv")
-    
-    if not os.path.exists(x_path):
-        print(f"⚠️ Warning: longdata.csv not found in {external_data_dir}")
-        print("🔍 Searching for fallback...")
-        fallback_search = glob.glob(os.path.join(working_dir, "**/longdata.csv"), recursive=True)
-        if fallback_search:
-            x_path = fallback_search[0]
-            print(f"✅ Found backbone at fallback location: {x_path}")
-        else:
-            print(f"❌ FATAL: longdata.csv is completely missing.")
-            sys.exit(1)
-
-    # 2. Load Backbone X
-    try:
-        x_df = pd.read_csv(x_path)
-        # Handle FRB standard 'OBS' vs standard 'date'
-        date_col = 'OBS' if 'OBS' in x_df.columns else 'date'
-        x_df['date'] = pd.PeriodIndex(x_df[date_col], freq='Q')
-        x_df = x_df.set_index('date').apply(pd.to_numeric, errors='coerce')
-        x_df.columns = [c.lower() for c in x_df.columns]
-        print(f"📦 Backbone X loaded: {len(x_df.columns)} variables.")
-    except Exception as e:
-        print(f"❌ FATAL: Failed to parse Backbone X: {e}")
-        sys.exit(1)
-
-    # 3. Load Greenbook Targets Y
-    try:
-        y_files = [f for f in os.listdir(processed_dir) if f.endswith('.csv')]
-        if not y_files:
-            print(f"❌ FATAL: No target files found in {processed_dir}")
-            sys.exit(1)
-            
-        print(f"📦 Merging {len(y_files)} Greenbook target files...")
-        y_df = pd.concat([
-            pd.read_csv(os.path.join(processed_dir, f))
-            .assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q'))
-            .set_index('date') for f in y_files
-        ], axis=1).sort_index()
-        y_df.columns = [c.lower() for c in y_df.columns]
-    except Exception as e:
-        print(f"❌ FATAL: Failed to merge Target Y files: {e}")
-        sys.exit(1)
-
-    # 4. In-Memory Merge & Solve
-    from pyfrbus import frbus
-    model_xml = os.path.join(working_dir, "models/model.xml")
-    if not os.path.exists(model_xml):
-        # Fallback search for model.xml if pathing changed
-        fallback_xml = glob.glob(os.path.join(working_dir, "**/model.xml"), recursive=True)
-        if fallback_xml:
-            model_xml = fallback_xml[0]
-        else:
-            print(f"❌ FATAL: model.xml not found.")
-            sys.exit(1)
+    # 2. Load Targets (Y)
+    y_files = glob.glob(os.path.join(processed_dir, "*.csv"))
+    if not y_files:
+        print("❌ FATAL: No processed Greenbook CSVs found."); sys.exit(1)
         
-    model = frbus.Frbus(model_xml)
-    
-    # Merge targets (Y) over backbone (X) to fill gaps
+    y_df = pd.concat([
+        pd.read_csv(f).assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q')).set_index('date') 
+        for f in y_files
+    ], axis=1).sort_index()
+    y_df.columns = [c.lower() for c in y_df.columns]
+
+    # 🕵️ DIAGNOSTIC: Check for actual overlap
+    common_dates = x_df.index.intersection(y_df.index)
+    print(f"🔍 Data Overlap: Found {len(common_dates)} quarters common to both Backbone and Targets.")
+    if len(common_dates) < 4:
+        print("🚨 ALERT: Insufficient data overlap. Solver will likely produce flat residuals.")
+
+    # 3. Solve only for the Overlap Window
+    from pyfrbus import frbus
+    model = frbus.Frbus(os.path.join(working_dir, "models/model.xml"))
     combined_df = y_df.combine_first(x_df).sort_index()
     
+    solve_start, solve_end = common_dates.min(), common_dates.max()
+    print(f"📈 Solving via init_trac: {solve_start} to {solve_end}")
+    
     try:
-        # Define the solve window based on the actual target data available
-        solve_start, solve_end = y_df.index.min(), y_df.index.max()
-        print(f"📈 Solving for residuals 'e' via init_trac from {solve_start} to {solve_end}...")
-        
-        # init_trac calculates the add-factors (e) to align model to history
         e_residuals = model.init_trac(solve_start, solve_end, combined_df)
         
-        # 5. Export Results
-        res_path = os.path.join(results_dir, "calibration_residuals_e.csv")
-        # Ensure 'date' is a column for the Jenkins post-processor to read
-        e_residuals.to_csv(res_path)
-        print(f"✅ SUCCESS: Calibration complete. Residuals saved to {res_path}")
-        
-    except Exception as err:
-        print(f"❌ Solver Error: {err}")
-        sys.exit(1)
+        # QUALITY CHECK: Fail if variation is non-existent
+        for var in ['anngr', 'delrff']:
+            if var in e_residuals.columns:
+                v_score = e_residuals[var].std()
+                print(f"Variable: {var} | Variance: {v_score:.5e}")
+                if v_score < 1e-10:
+                    print(f"❌ FATAL: {var} is flat. Check if input data for {var} is constant.")
+                    sys.exit(1)
+
+        e_residuals.to_csv(os.path.join(results_dir, "calibration_residuals_e.csv"))
+        print("✅ SUCCESS: Calibration Complete.")
+    except Exception as e:
+        print(f"❌ Solver Crashed: {e}"); sys.exit(1)
 
 if __name__ == "__main__":
     run_pro_engine()
