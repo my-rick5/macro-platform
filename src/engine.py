@@ -67,7 +67,7 @@ def run_pro_engine():
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
             # 🛡️ Expanded Safe Registry: Added 'dpgap' to clear Build #509 error
-            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap']
+            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap', 'ebfi']
             for var in required_proxies:
                 if var not in current_df.columns:
                     current_df[var] = 0.0
@@ -92,7 +92,7 @@ def run_pro_engine():
                     current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                     
                     # 🛡️ Persistent registry injection
-                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap']
+                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap', 'ebfi']
                     for var in required_proxies:
                         if var not in current_df.columns:
                             current_df[var] = 0.0
