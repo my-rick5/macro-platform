@@ -20,7 +20,7 @@ def run_pro_engine():
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
     results_dir = os.path.join(working_dir, "results")
-    os.makedirs(results_dir, exist_index=True)
+    os.makedirs(results_dir, exist_ok=True)
     
     # 2. Data Loading
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
