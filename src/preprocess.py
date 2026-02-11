@@ -8,12 +8,13 @@ def clean_fed_excel(excel_path, output_dir):
     xls = pd.ExcelFile(excel_path)
     
     # HARD-CODED MAPPING: Ensure these exact sheet names map to model variables
+# More flexible mapping to catch variations in your Excel sheets
     mapping = {
-        'anngr': 'anngr',
-        'delrff': 'delrff',
-        'lur': 'adjlegrt',
-        'grm': 'ddockm',
-        'grx': 'ddockx'
+        'anngr': 'anngr', 'gdp': 'anngr',
+        'delrff': 'delrff', 'ffr': 'delrff',
+        'lur': 'adjlegrt', 'unemp': 'adjlegrt',
+        'grm': 'ddockm', 'imports': 'ddockm',
+        'grx': 'ddockx', 'exports': 'ddockx'
     }
     
     for sheet in xls.sheet_names:
