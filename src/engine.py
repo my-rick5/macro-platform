@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Data-Proxied Engine v4.")
+print("🚀 Heartbeat: Final Unified Safe Registry Engine v5.")
 print("--------------------------------------------------")
 
 try:
@@ -30,7 +30,6 @@ def run_pro_engine():
         print("❌ ERROR: No source CSVs found.")
         return
 
-    # Merging processed variables into a unified PeriodIndex dataframe
     df = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
         .assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q'))
@@ -62,14 +61,17 @@ def run_pro_engine():
     
     while current_solve_start <= full_end:
         
-        # 🎯 STRATEGY: VANILLA RESET + DATA PROXY PATCH (1989Q4)
+        # 🎯 STRATEGY: SAFE REGISTRY INITIALIZATION (1989Q4)
         if current_solve_start == pd.Period('1989Q4', freq='Q'):
-            print("🛡️ 1989Q4 Deadlock: Patching dmptmax & Triggering Reset...")
+            print("🛡️ 1989Q4 Deadlock: Patching Variable Registry & Triggering Reset...")
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
-            # 🛡️ Data Patch: Resolves MissingDataError found in Build #502
-            if 'dmptmax' not in current_df.columns:
-                current_df['dmptmax'] = 0.0
+            # 🛡️ Safe Registry: Resolves MissingDataError for technical coefficients
+            # Injects delrff, dmptmax, and others required for standalone cold-starts
+            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi']
+            for var in required_proxies:
+                if var not in current_df.columns:
+                    current_df[var] = 0.0
             
             # API FIX: Vanilla 3-position call (start, end, data)
             results = model.init_trac(current_solve_start, current_solve_start, current_df)
@@ -90,9 +92,11 @@ def run_pro_engine():
                 try:
                     current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                     
-                    # 🛡️ Ensure dmptmax persists for initialization across all windows
-                    if 'dmptmax' not in current_df.columns:
-                        current_df['dmptmax'] = 0.0
+                    # 🛡️ Ensure registry persists for initialization across all windows
+                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi']
+                    for var in required_proxies:
+                        if var not in current_df.columns:
+                            current_df[var] = 0.0
                         
                     results = model.init_trac(current_solve_start, current_solve_end, current_df)
                     
@@ -119,14 +123,16 @@ def run_pro_engine():
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     
     # Ensure final data satisfies initialization check
-    if 'dmptmax' not in final_data.columns:
-        final_data['dmptmax'] = 0.0
+    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi']
+    for var in required_proxies:
+        if var not in final_data.columns:
+            final_data[var] = 0.0
 
     print("📈 Finalizing full-sample trace...")
     final_results = model.init_trac(first_actual, full_end, final_data)
     final_results.to_csv(output_path)
     
-    print(f"✅ SUCCESS: Build #503 complete. Results stored at: {output_path}")
+    print(f"✅ SUCCESS: Build #505 complete. Results stored at: {output_path}")
 
 if __name__ == "__main__":
     run_pro_engine()
