@@ -31,13 +31,14 @@ pipeline {
                         sh "docker exec -w /home/spark engine-${env.BUILD_NUMBER} python3 src/engine.py"
                         
                         echo "🧹 Generating Lite Version & Visuals (Inside Docker)..."
-                        sh """
-                        docker exec -w /home/spark engine-${env.BUILD_NUMBER} python3 -c "
+sh """
+docker exec -i engine-${env.BUILD_NUMBER} python3 -u - <<-EOF
 import pandas as pd
 import matplotlib.pyplot as plt
+import sys
 import os
 
-# 1. Load the results
+# 1. Load data
 file_path = 'results/calibration_residuals_e.csv'
 if os.path.exists(file_path):
     df = pd.read_csv(file_path)
@@ -49,22 +50,26 @@ if os.path.exists(file_path):
         lite_df = df[present].dropna(how='all').tail(40)
         lite_df.to_csv('results/lite_residuals.csv', index=False)
         
-        # Print Stats to Jenkins Console
-        print('\\n' + '='*30 + '\\nLITE STATISTICS\\n' + '='*30)
+        # 2. FORCE PRINT TO CONSOLE
+        print('\\n' + '='*30)
+        print('📊 LITE STATISTICS')
+        print('='*30)
         print(lite_df.describe())
-        
-        # Create Visuals
+        sys.stdout.flush()  # Force Jenkins to show it now
+
+        # 3. SAVE GRAPH
         plt.figure(figsize=(10, 6))
         lite_df.plot(marker='o')
         plt.title('Key Macro Residuals (Last 40 Qtrs)')
-        plt.ylabel('Residual Value')
-        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.grid(True)
         plt.savefig('results/residual_plot.png')
-        print('\\n✅ Visuals and Lite CSV created.')
+        print('\\n✅ Visuals saved to results/residual_plot.png')
+    else:
+        print('⚠️ Warning: No target variables found.')
 else:
-    print('❌ Error: Raw results file not found!')
-"
-                        """
+    print('❌ Error: calibration_residuals_e.csv is missing!')
+EOF
+"""
                         
                         // Copy everything back to the host before cleaning up
                         sh "docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/"
