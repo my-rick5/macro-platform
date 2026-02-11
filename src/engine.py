@@ -4,10 +4,10 @@ import sys
 import glob
 
 def run_pro_engine():
-    # Updated Build number to match your Jenkins trajectory
-    print("🚀 Heartbeat: Full Calibration Engine (Build #590)")
-    
-    # Using absolute path inside the container as defined in Jenkinsfile
+    # Identifies the build context in the logs
+    print("🚀 Heartbeat: Full Calibration Engine (init_trac Solver)")
+
+    # Define paths inside the Docker container
     working_dir = "/home/spark"
     external_data_dir = os.path.join(working_dir, "external_data")
     processed_dir = os.path.join(working_dir, "data/processed")
@@ -27,20 +27,20 @@ def run_pro_engine():
             print(f"✅ Found backbone at fallback location: {x_path}")
         else:
             print(f"❌ FATAL: longdata.csv is completely missing.")
-            print(f"Directory listing for {working_dir}: {os.listdir(working_dir)}")
             sys.exit(1)
 
     # 2. Load Backbone X
     try:
         x_df = pd.read_csv(x_path)
-        # Supports both 'OBS' (FRB standard) and 'date'
+        # Handle FRB standard 'OBS' vs standard 'date'
         date_col = 'OBS' if 'OBS' in x_df.columns else 'date'
         x_df['date'] = pd.PeriodIndex(x_df[date_col], freq='Q')
         x_df = x_df.set_index('date').apply(pd.to_numeric, errors='coerce')
         x_df.columns = [c.lower() for c in x_df.columns]
         print(f"📦 Backbone X loaded: {len(x_df.columns)} variables.")
     except Exception as e:
-        print(f"❌ FATAL: Failed to parse Backbone X: {e}"); sys.exit(1)
+        print(f"❌ FATAL: Failed to parse Backbone X: {e}")
+        sys.exit(1)
 
     # 3. Load Greenbook Targets Y
     try:
@@ -57,34 +57,43 @@ def run_pro_engine():
         ], axis=1).sort_index()
         y_df.columns = [c.lower() for c in y_df.columns]
     except Exception as e:
-        print(f"❌ FATAL: Failed to merge Target Y files: {e}"); sys.exit(1)
+        print(f"❌ FATAL: Failed to merge Target Y files: {e}")
+        sys.exit(1)
 
     # 4. In-Memory Merge & Solve
     from pyfrbus import frbus
     model_xml = os.path.join(working_dir, "models/model.xml")
     if not os.path.exists(model_xml):
-        print(f"❌ FATAL: model.xml not found at {model_xml}")
-        sys.exit(1)
+        # Fallback search for model.xml if pathing changed
+        fallback_xml = glob.glob(os.path.join(working_dir, "**/model.xml"), recursive=True)
+        if fallback_xml:
+            model_xml = fallback_xml[0]
+        else:
+            print(f"❌ FATAL: model.xml not found.")
+            sys.exit(1)
         
     model = frbus.Frbus(model_xml)
     
-    # Merge targets (Y) over backbone (X)
+    # Merge targets (Y) over backbone (X) to fill gaps
     combined_df = y_df.combine_first(x_df).sort_index()
     
     try:
+        # Define the solve window based on the actual target data available
         solve_start, solve_end = y_df.index.min(), y_df.index.max()
-        print(f"📈 Solving for residuals 'e' from {solve_start} to {solve_end}...")
+        print(f"📈 Solving for residuals 'e' via init_trac from {solve_start} to {solve_end}...")
         
-        # init_trac finds the e such that Y = model(Beta, X) + e
+        # init_trac calculates the add-factors (e) to align model to history
         e_residuals = model.init_trac(solve_start, solve_end, combined_df)
         
         # 5. Export Results
         res_path = os.path.join(results_dir, "calibration_residuals_e.csv")
+        # Ensure 'date' is a column for the Jenkins post-processor to read
         e_residuals.to_csv(res_path)
         print(f"✅ SUCCESS: Calibration complete. Residuals saved to {res_path}")
         
     except Exception as err:
-        print(f"❌ Solver Error: {err}"); sys.exit(1)
+        print(f"❌ Solver Error: {err}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     run_pro_engine()
