@@ -122,7 +122,7 @@ def run_pro_engine():
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     
     # Final data safety check
-    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap']
+    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap', 'ebfi']
     for var in required_proxies:
         if var not in final_data.columns:
             final_data[var] = 0.0
