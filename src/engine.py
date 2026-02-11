@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Universal GDP Engine v10.")
+print("🚀 Heartbeat: Final Total Identity Engine v11.")
 print("--------------------------------------------------")
 
 try:
@@ -58,18 +58,18 @@ def run_pro_engine():
     
     while current_solve_start <= full_end:
         
-        # 🎯 STRATEGY: UNIVERSAL GDP PATCH (1989Q4)
+        # 🎯 STRATEGY: TOTAL IDENTITY PATCH (1989Q4)
         if current_solve_start == pd.Period('1989Q4', freq='Q'):
-            print("🛡️ 1989Q4 Deadlock: Patching Universal GDP Components & Resetting...")
+            print("🛡️ 1989Q4 Deadlock: Patching Total Identity Registry & Resetting...")
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
-            # 🛡️ Universal Registry: Added 'ec' (Build #515) plus 'ex'/'em'
-            # This covers the full GDP identity to stop the "whack-a-mole" cycle.
+            # 🛡️ Total Registry: Added 'ecd' (Build #517 Fix) plus 'ecn'/'ecs'
+            # This proactively clears the remaining consumption sub-block errors.
             required_proxies = [
                 'dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', # Policy
                 'dpadj', 'dpgap',                                 # Price/Gap
                 'ebfi', 'ebfin',                                  # Investment
-                'ec', 'eco', 'econ',                              # Consumption (Build #515 Fix)
+                'ec', 'eco', 'econ', 'ecd', 'ecn', 'ecs',         # Consumption 
                 'eg', 'egn',                                      # Government
                 'ex', 'em'                                        # Trade
             ]
@@ -85,7 +85,6 @@ def run_pro_engine():
             window_passed = True
             
         else:
-            # Standard solving for 1990+
             step_size = 1 if current_solve_start < pd.Period('1991Q1', freq='Q') else 4
             current_solve_end = min(current_solve_start + (step_size - 1), full_end)
             
@@ -96,7 +95,7 @@ def run_pro_engine():
                     current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                     
                     # Ensure registry persists
-                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap', 'ebfi', 'ebfin', 'ec', 'eco', 'econ', 'eg', 'egn', 'ex', 'em']
+                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap', 'ebfi', 'ebfin', 'ec', 'eco', 'econ', 'ecd', 'ecn', 'ecs', 'eg', 'egn', 'ex', 'em']
                     for var in required_proxies:
                         if var not in current_df.columns:
                             current_df[var] = 0.0
@@ -125,7 +124,7 @@ def run_pro_engine():
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     
-    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap', 'ebfi', 'ebfin', 'ec', 'eco', 'econ', 'eg', 'egn', 'ex', 'em']
+    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj', 'dpgap', 'ebfi', 'ebfin', 'ec', 'eco', 'econ', 'ecd', 'ecn', 'ecs', 'eg', 'egn', 'ex', 'em']
     for var in required_proxies:
         if var not in final_data.columns:
             final_data[var] = 0.0
@@ -134,7 +133,7 @@ def run_pro_engine():
     final_results = model.init_trac(first_actual, full_end, final_data)
     final_results.to_csv(output_path)
     
-    print(f"✅ SUCCESS: Build complete. Artifact stored at: {output_path}")
+    print(f"✅ SUCCESS: Build complete. Results stored at: {output_path}")
 
 if __name__ == "__main__":
     run_pro_engine()
