@@ -1,10 +1,9 @@
 import pandas as pd
 import os
 import shutil
-import re
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #683 Macro-Label Hunter)... ")
+    print(f"🎬 Starting Preprocessor (Build #685 Direct Indexing)... ")
     
     # 1. CLEAN SWEEP
     if os.path.exists(output_dir):
@@ -17,54 +16,36 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    mapping = {'unemp': 'adjlegrt', 'lur': 'adjlegrt', 'gdp': 'anngr', 'anngr': 'anngr', 'pce': 'eco'}
+    # MAPPING: {Sheet Name: (Variable Name, Column Index)}
+    # We use index 1 because index 0 is almost always the date.
+    config = {
+        'unemp': ('adjlegrt', 1),
+        'lur':   ('adjlegrt', 1),
+        'gdp':   ('anngr', 1),
+        'pce':   ('eco', 1)
+    }
     
     for sheet in xls.sheet_names:
         s_clean = sheet.strip().lower()
-        if s_clean not in mapping: continue 
+        if s_clean not in config: continue 
             
-        var_name = mapping[s_clean]
+        var_name, col_idx = config[s_clean]
         try:
-            df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
-            df.rename(columns={df.columns[0]: 'date_raw'}, inplace=True)
+            # We don't skiprows here so we can see the full structure
+            df = pd.read_excel(xls, sheet_name=sheet)
             
-            candidates = []
-            for c in df.columns:
-                if c == 'date_raw': continue
-                
-                # Normalize and remove any trailing pandas suffixes like .1, .2
-                c_str = re.sub(r'\.\d+$', '', str(c).lower().strip())
-                
-                # 1. THE "ANTI-NAN" GUARD: Explicitly reject null-strings and short junk
-                if c_str in ['nan', 'none', 'null', ''] or len(c_str) < 2: 
-                    continue
-                
-                # 2. ALPHA REINFORCEMENT: Header must have meaningful characters
-                if not re.search(r'[a-z]', c_str): 
-                    continue
-                
-                converted = pd.to_numeric(df[c], errors='coerce')
-                valid_count = converted.notna().sum()
-                
-                if valid_count > 150:
-                    avg_val = converted.mean()
-                    if not (-10 < avg_val < 25): continue
-                    
-                    keywords = ['rate', 'unemp', 'lur', 'val', 'adj', 'index', var_name]
-                    has_keyword = any(k in c_str for k in keywords)
-                    
-                    score = (100 if has_keyword else 10)
-                    candidates.append({'col': c, 'data': converted, 'score': score, 'count': valid_count})
+            # --- DIRECT INDEX SELECTION ---
+            # Column 0 = Dates, Column 1 = Data
+            date_col = df.iloc[:, 0]
+            data_col = df.iloc[:, col_idx]
             
-            if candidates:
-                winner = sorted(candidates, key=lambda x: (x['score'], x['count']), reverse=True)[0]
-                df[var_name] = winner['data']
-                print(f"   🎯 MACRO Winner for '{sheet}': '{winner['col']}' ({winner['count']} pts)")
-            else:
-                print(f"   ⚠️ WARNING: No valid labeled series found in '{sheet}'.")
-                continue
+            # Convert data to numeric and drop rows where either date or data is missing
+            processed_df = pd.DataFrame({
+                'date_raw': date_col,
+                var_name: pd.to_numeric(data_col, errors='coerce')
+            }).dropna()
 
-            # Date Parsing & Final Deduplication
+            # --- QUARTERLY DATE PARSING ---
             def parse_period(val):
                 try:
                     f_val = float(val)
@@ -73,10 +54,14 @@ def clean_fed_excel(excel_path, output_dir):
                     return f"{year}Q{q}"
                 except: return None
 
-            df['date'] = df['date_raw'].apply(parse_period)
-            final_df = df.dropna(subset=['date', var_name]).groupby('date')[var_name].last().reset_index()
-            final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
-            print(f"   ✅ SUCCESS: Saved {var_name}.csv")
+            processed_df['date'] = processed_df['date_raw'].apply(parse_period)
+            
+            # Deduplicate and Save
+            final_df = processed_df.dropna(subset=['date', var_name])
+            if not final_df.empty:
+                final_df = final_df.groupby('date')[var_name].last().reset_index()
+                final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
+                print(f"   ✅ SUCCESS: Saved {var_name}.csv from Column {col_idx}")
                 
         except Exception as e:
             print(f"   ❌ Error processing sheet '{sheet}': {e}")
