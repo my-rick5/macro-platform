@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 def run_pro_engine():
-    print("🚀 Heartbeat: Safe-Scope Hybrid Engine (Build #555)")
+    print("🚀 Heartbeat: Safe Bulk-Preload Engine (Build #558)")
     
     # 1. Environment & Path Setup
     working_dir = os.getcwd()
@@ -34,81 +34,74 @@ def run_pro_engine():
     ], axis=1).sort_index()
     df.columns = [c.lower() for c in df.columns]
 
-    # 3. Model Initialization
+    # 3. Model Initialization & Bulk Variable Discovery
     model = frbus.Frbus(model_xml)
     solve_start = df.index.min() + 1
     solve_end = df.index.max()
     
-    # Discovery Registry
-    registry_df = pd.DataFrame(index=df.index)
-    target_variables = list(df.columns)
-    
-    # Calibration Settings
+    # 🎯 FIX: Safely extract all model variables to avoid the discovery loop
+    all_model_vars = []
+    for attr in ['varnames', 'variables', 'var_names']:
+        if hasattr(model, attr):
+            val = getattr(model, attr)
+            # Handle both callable methods and simple lists
+            all_model_vars = [v.lower() for v in (val() if callable(val) else val)]
+            print(f"📦 Pre-loaded {len(all_model_vars)} variables via '{attr}'")
+            break
+            
+    if not all_model_vars:
+        print("⚠️ Warning: Could not bulk-inspect variables. Reverting to basic list.")
+        all_model_vars = list(df.columns)
+
+    # 4. Create the Unit-Neutral Workspace
+    # Pre-filling everything with 1.0 prevents the 'MissingDataError' chain reaction
+    registry_df = pd.DataFrame(1.0, index=df.index, columns=all_model_vars)
+    current_df = df.combine_first(registry_df).copy()
+
+    # 5. Entropy Calibration Loop
     max_entropy_cycles = 5
     entropy_threshold = 1e-6
-    
-    # 🎯 FIX 1: Initialize results in the function scope
     results = None
 
     for cycle in range(1, max_entropy_cycles + 1):
-        window_passed = False
-        attempts = 0
-        
-        # 🎯 FIX 2: Increased discovery limit to 200
-        while not window_passed and attempts < 200:
-            try:
-                current_df = pd.concat([df, registry_df], axis=1).fillna(1.0).copy()
-                
-                print(f"🔄 Entropy Cycle {cycle}/{max_entropy_cycles} (Attempt {attempts})...")
-                results = model.init_trac(solve_start, solve_end, current_df)
-                
-                # Update discovered variables
-                for col in results.columns:
-                    if col not in target_variables:
-                        registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 1.0)
-                
-                window_passed = True
-                
-            except Exception as e:
-                msg = str(e)
-                match = re.search(r'`([^`]+)`', msg)
-                if match:
-                    missing_var = match.group(1).lower()
-                    print(f"🛡️ Discovery: Initializing missing variable `{missing_var}`")
-                    registry_df[missing_var] = 1.0
-                    registry_df = registry_df.copy() # De-fragment
-                    attempts += 1
-                else:
-                    print(f"❌ Unrecoverable Math Error: {msg}")
-                    sys.exit(1)
-
-        # 🎯 FIX 3: Conditional Entropy calculation
-        if results is not None:
+        try:
+            print(f"🔄 Entropy Cycle {cycle}/{max_entropy_cycles}...")
+            # Results will now solve in one pass because all variables exist
+            results = model.init_trac(solve_start, solve_end, current_df)
+            
             entropy_score = np.mean(np.square(results.values))
             print(f"📊 Cycle {cycle} Entropy Score: {entropy_score:.8f}")
             
             if entropy_score < entropy_threshold:
-                print("✨ Calibration threshold met.")
+                print("✨ Calibration achieved.")
                 break
             
-            # Update base data for next entropy nudge
-            df = df.add(results * 0.1, fill_value=0)
-        else:
-            print("⚠️ Warning: Discovery phase failed to produce results. Skipping calibration.")
-            break
+            # Nudge logic for calibration
+            current_df = current_df.add(results * 0.1, fill_value=0)
+            
+        except Exception as e:
+            # Final fallback: patch any missing variables the bulk-load missed
+            msg = str(e)
+            if "has no corresponding series in the input data" in msg:
+                match = re.search(r'`([^`]+)`', msg)
+                if match:
+                    missing_var = match.group(1).lower()
+                    print(f"🛡️ Patching missed variable: {missing_var}")
+                    current_df[missing_var] = 1.0
+                    continue 
+            print(f"❌ Unrecoverable Math Error: {e}")
+            sys.exit(1)
 
-    # 5. Final Exports
+    # 6. Final Exports
     if results is not None:
-        full_path = os.path.join(results_dir, "residuals.csv")
-        results.to_csv(full_path)
+        results.to_csv(os.path.join(results_dir, "residuals.csv"))
         
-        lite_path = os.path.join(results_dir, "residuals_lite.csv")
         lite_vars = ['cve', 'y', 'pit', 'unr', 'rff'] 
-        available_vars = [v for v in lite_vars if v in results.columns]
-        results[available_vars].to_csv(lite_path)
-        print(f"✅ SUCCESS: Exported residuals.csv and residuals_lite.csv")
+        available = [v for v in lite_vars if v in results.columns]
+        results[available].to_csv(os.path.join(results_dir, "residuals_lite.csv"))
+        print(f"✅ SUCCESS: Build #558 complete.")
     else:
-        print("❌ FATAL: Engine failed to generate any results.")
+        print("❌ FATAL: No results generated.")
         sys.exit(1)
 
 if __name__ == "__main__":
