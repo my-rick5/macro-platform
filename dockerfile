@@ -49,6 +49,7 @@ RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 COPY --from=builder /root/.local /home/spark/.local
 COPY src /home/spark/src
 COPY tests /home/spark/tests
+COPY external_data /home/spark/external_data
 
 # Create data/results/models directories
 # We need 'models' to house the model.xml we fetch in Jenkins
