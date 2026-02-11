@@ -4,7 +4,7 @@ import re
 import sys
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Small-Constant Engine v24.")
+print("🚀 Heartbeat: Final De-fragmented Unit Engine v25.")
 print("--------------------------------------------------")
 
 try:
@@ -15,7 +15,7 @@ except Exception as e:
     sys.exit(1)
 
 def run_pro_engine():
-    # 1. Setup
+    # 1. Environment Setup
     working_dir = os.getcwd()
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
@@ -32,9 +32,8 @@ def run_pro_engine():
     
     full_timeline = pd.period_range(start=raw_df.index.min(), end=raw_df.index.max(), freq='Q')
     
-    # 🎯 FIX: Use a tiny positive epsilon (1e-5) instead of 1.0 or 0.0
-    # This prevents log(0) without creating the 'log(1)=0' identity issues.
-    df = raw_df.reindex(full_timeline).fillna(0.01)
+    # 🎯 FIX: Fill with 1.0 (Unit Neutral) and Copy to De-fragment
+    df = raw_df.reindex(full_timeline).fillna(1.0).copy()
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
@@ -42,6 +41,8 @@ def run_pro_engine():
     model = frbus.Frbus(model_xml)
     df['mc_mode'] = 0.0  
     df['mco_mode'] = 1.0  
+    
+    # Initialize registry with all periods but no columns
     registry_df = pd.DataFrame(index=df.index)
 
     safe_harbor_start = pd.Period('2004Q1', freq='Q')
@@ -55,24 +56,27 @@ def run_pro_engine():
 
         while not window_passed and attempts < 200:
             try:
-                current_df = pd.concat([df, registry_df], axis=1).fillna(0.01)
+                # Merge and immediately de-fragment
+                current_df = pd.concat([df, registry_df], axis=1).fillna(1.0).copy()
                 results = model.init_trac(current_solve_start, solve_end, current_df)
                 
-                for col in results.columns:
-                    if col not in target_variables:
-                        registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 0.01)
+                new_vars = {col: results[col] for col in results.columns if col not in target_variables}
+                if new_vars:
+                    # Batch update to avoid Fragmentation
+                    new_registry_cols = pd.DataFrame(new_vars, index=df.index)
+                    registry_df = pd.concat([registry_df, new_registry_cols], axis=1).groupby(level=0, axis=1).last().copy()
+                
                 window_passed = True
+                print(f"✅ Window {current_solve_start} solved.")
             except Exception as e:
                 msg = str(e)
-                # Catch divide-by-zero specifically to log it
-                if "divide by zero" in msg.lower():
-                    print(f"⚠️ Math Warning at {current_solve_start}: Attempting epsilon shift...")
-                
                 match = re.search(r'`([^`]+)`', msg)
                 if match:
                     missing_var = match.group(1).lower()
-                    print(f"🛡️ Discovery: Adding epsilon-safe `{missing_var}`")
-                    registry_df[missing_var] = 0.01
+                    print(f"🛡️ Discovery: Adding unit-safe `{missing_var}`")
+                    # Add as a new column with 1.0 fill
+                    registry_df[missing_var] = 1.0
+                    registry_df = registry_df.copy() # Constant de-fragmentation
                     attempts += 1
                 else:
                     window_passed = True
@@ -82,17 +86,17 @@ def run_pro_engine():
             
     # 5. Final Export
     output_path = os.path.join(results_dir, "residuals_lite.csv")
-    final_data = pd.concat([df, registry_df], axis=1).reindex(full_timeline).fillna(0.01)
+    final_data = pd.concat([df, registry_df], axis=1).reindex(full_timeline).fillna(1.0).copy()
     
-    last_solved = registry_df.dropna(how='all').index.max()
-    print(f"📈 Finalizing epsilon-safe residuals from {safe_harbor_start} to {last_solved}...")
+    last_solved = registry_df.dropna(how='all').index.max() if not registry_df.empty else safe_harbor_start
+    print(f"📈 Finalizing unit-safe residuals from {safe_harbor_start} to {last_solved}...")
     
     try:
         final_results = model.init_trac(safe_harbor_start, last_solved, final_data)
         final_results.to_csv(output_path)
-        print(f"✅ SUCCESS: Build #540 complete.")
+        print(f"✅ SUCCESS: Build complete. Output saved.")
     except Exception as e:
-        print(f"❌ Final Trace Failed: {e}")
+        print(f"❌ Critical Mathematical Failure: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
