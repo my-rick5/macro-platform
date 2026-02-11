@@ -23,6 +23,3 @@ data/
 *.json
 
 .git
-results/
-data/processed/
-*.csv
