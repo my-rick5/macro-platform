@@ -2,96 +2,76 @@ pipeline {
     agent any
 
     environment {
-        PYTHONPATH = "/home/spark/.local/lib/python3.9/site-packages:/home/spark:/home/spark/src"
+        // Ensuring the container knows where its own code is
+        PYTHONPATH = "/home/spark:/home/spark/src"
     }
 
     stages {
-        stage('Initialize & Search') {
+        stage('Initialize') {
             steps {
                 script {
-                    echo "🔍 Preparing workspace and aliasing data..."
-                    // Create directories
                     sh "mkdir -p results data"
-                    
-                    // The "Tealbook-to-Library" Alias Fix
-                    sh """
-                        if [ ! -f data/library.xlsx ]; then
-                            echo '📝 library.xlsx not found, aliasing tealbook_raw.xlsx...'
-                            cp data/tealbook_raw.xlsx data/library.xlsx
-                        fi
-                    """
-                    
-                    // Verify the Model Path
-                    sh "ls -R pyfrbus/models || echo '⚠️ Warning: pyfrbus/models not found!'"
-                    
-                    sh "docker rm -f engine-run-${env.BUILD_NUMBER} || true"
+                    // Alias Tealbook as Library if needed
+                    sh "[ -f data/library.xlsx ] || cp data/tealbook_raw.xlsx data/library.xlsx"
                 }
             }
         }
 
-        stage('Build Image') {
-            steps {
-                echo "🔨 Building Docker Image..."
-                // Using --no-cache once ensures our new path fixes are captured
-                sh "docker build -t macro-engine-image:${env.BUILD_NUMBER} ."
-            }
-        }
-
-        stage('Run Model Pipeline') {
+        stage('Build & Run Engine') {
             steps {
                 script {
-                    sh "docker run -d --name engine-run-${env.BUILD_NUMBER} macro-engine-image:${env.BUILD_NUMBER} sleep 600"
+                    sh "docker build -t macro-engine-image:${env.BUILD_NUMBER} ."
+                    
+                    // Start container as a daemon
+                    sh "docker run -d --name engine-${env.BUILD_NUMBER} macro-engine-image:${env.BUILD_NUMBER} sleep 600"
+                    
                     try {
-                        echo "🚀 Running Engine..."
-                        sh "docker exec -w /home/spark -e PYTHONPATH=${env.PYTHONPATH} engine-run-${env.BUILD_NUMBER} python3 src/preprocess.py"
-                        sh "docker exec -w /home/spark -e PYTHONPATH=${env.PYTHONPATH} engine-run-${env.BUILD_NUMBER} python3 src/engine.py"
+                        echo "⚙️ Preprocessing & Running Model..."
+                        sh "docker exec -w /home/spark engine-${env.BUILD_NUMBER} python3 src/preprocess.py"
+                        sh "docker exec -w /home/spark engine-${env.BUILD_NUMBER} python3 src/engine.py"
                         
-                        echo "📥 Extracting Raw Results..."
-                        sh "docker cp engine-run-${env.BUILD_NUMBER}:/home/spark/results/. ./results/"
+                        echo "🧹 Generating Lite Version & Visuals (Inside Docker)..."
+                        sh """
+                        docker exec -w /home/spark engine-${env.BUILD_NUMBER} python3 -c "
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+
+# 1. Load the results
+file_path = 'results/calibration_residuals_e.csv'
+if os.path.exists(file_path):
+    df = pd.read_csv(file_path)
+    targets = ['LUR', 'XGDP', 'PCE', 'RFF']
+    present = [c for c in targets if c in df.columns]
+
+    if present:
+        # Create Lite Version
+        lite_df = df[present].dropna(how='all').tail(40)
+        lite_df.to_csv('results/lite_residuals.csv', index=False)
+        
+        # Print Stats to Jenkins Console
+        print('\\n' + '='*30 + '\\nLITE STATISTICS\\n' + '='*30)
+        print(lite_df.describe())
+        
+        # Create Visuals
+        plt.figure(figsize=(10, 6))
+        lite_df.plot(marker='o')
+        plt.title('Key Macro Residuals (Last 40 Qtrs)')
+        plt.ylabel('Residual Value')
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.savefig('results/residual_plot.png')
+        print('\\n✅ Visuals and Lite CSV created.')
+else:
+    print('❌ Error: Raw results file not found!')
+"
+                        """
+                        
+                        // Copy everything back to the host before cleaning up
+                        sh "docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/"
+                        
                     } finally {
-                        sh "docker rm -f engine-run-${env.BUILD_NUMBER} || true"
+                        sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
                     }
-                }
-            }
-        }
-
-        stage('Post-Process & Visuals') {
-            steps {
-                script {
-                    echo "🧹 Generating Lite Version and Descriptives..."
-                    // This runs a python block to filter data and create a plot
-                    sh """
-                    python3 -c "
-                    import pandas as pd
-                    import matplotlib.pyplot as plt
-                    import os
-
-                    # Load the 'aids-ridden' file
-                    df = pd.read_csv('results/calibration_residuals_e.csv')
-                    
-                    # Define Lite Variables (Common FRB/US targets)
-                    targets = ['LUR', 'XGDP', 'PCE', 'RFF']
-                    present = [c for c in targets if c in df.columns]
-                    
-                    if present:
-                        lite_df = df[present].dropna(how='all').tail(40) # Last 10 years (quarterly)
-                        lite_df.to_csv('results/lite_residuals.csv', index=False)
-                        
-                        # Generate Descriptive Statistics
-                        print('\\n--- LITE STATISTICS ---')
-                        print(lite_df.describe())
-
-                        # Generate Visual Plot
-                        plt.figure(figsize=(10, 6))
-                        lite_df.plot()
-                        plt.title('Macro Residuals (Lite View)')
-                        plt.grid(True)
-                        plt.savefig('results/residual_plot.png')
-                        print('✅ Visuals generated.')
-                    else:
-                        print('⚠️ No target variables found to plot.')
-                    "
-                    """
                 }
             }
         }
@@ -99,7 +79,7 @@ pipeline {
 
     post {
         always {
-            // Archive everything: the big file, the lite file, and the PNG
+            // This will now find: calibration_residuals_e.csv, lite_residuals.csv, and residual_plot.png
             archiveArtifacts artifacts: 'results/*', allowEmptyArchive: true
         }
     }
