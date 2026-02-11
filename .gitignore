@@ -24,7 +24,6 @@ target/
 logs/
 results/
 *.parquet
-*.csv
 
 # === Docker ===
 .docker/
