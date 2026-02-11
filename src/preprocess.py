@@ -1,8 +1,14 @@
 import pandas as pd
 import os
+import shutil
+import re
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #675 Tiered Hunter)... ")
+    print(f"🎬 Starting Preprocessor (Build #677 Regex Hunter)... ")
+    
+    # CLEAN SWEEP: Ensure no old data remains
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
     
     try:
@@ -22,45 +28,38 @@ def clean_fed_excel(excel_path, output_dir):
             df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
             df.rename(columns={df.columns[0]: 'date_raw'}, inplace=True)
             
-            # --- TIERED HUNTER LOGIC ---
-            gold_candidates = []
-            silver_candidates = []
-            
+            candidates = []
             for c in df.columns:
                 if c == 'date_raw': continue
-                c_str = str(c).lower()
-                if c_str.count('.') >= 2: continue # Version Guard
+                c_str = str(c).upper() # Normalize to uppercase for regex
+                
+                # 1. VERSION/DATE REJECTION: Skip headers like '3.7', '3.8.3', or '2024'
+                if re.search(r'^\d+(\.\d+)*$', c_str): continue
                 
                 converted = pd.to_numeric(df[c], errors='coerce')
                 valid_count = converted.notna().sum()
                 
-                # Broaden search: require at least 100 points
-                if valid_count > 100: 
+                if valid_count > 100:
                     avg_val = converted.mean()
                     if not (-10 < avg_val < 25): continue
                     
-                    keywords = ['rate', 'unemp', 'lur', 'val', 'adj', 'index', var_name]
-                    has_keyword = any(k in c_str for k in keywords)
+                    # 2. MACRO REGEX: Prioritize specific economic codes
+                    # Matches LUR, UNRATE, ADJLEGRT, VALUE, or RATE
+                    is_macro = re.search(r'(LUR|UNRATE|RATE|VALUE|ADJ|' + var_name.upper() + r')', c_str)
                     
-                    candidate = {'col': c, 'data': converted, 'count': valid_count}
-                    if has_keyword:
-                        gold_candidates.append(candidate)
-                    else:
-                        silver_candidates.append(candidate)
+                    score = (100 if is_macro else 10)
+                    candidates.append({'col': c, 'data': converted, 'score': score, 'count': valid_count})
             
-            # Selection Priority: Gold (Keywords) -> Silver (Density)
-            final_selection = sorted(gold_candidates, key=lambda x: x['count'], reverse=True) or \
-                              sorted(silver_candidates, key=lambda x: x['count'], reverse=True)
-
-            if final_selection:
-                winner = final_selection[0]
+            if candidates:
+                # Pick the highest score (macro codes), then the highest density
+                winner = sorted(candidates, key=lambda x: (x['score'], x['count']), reverse=True)[0]
                 df[var_name] = winner['data']
-                print(f"   🎯 TIERED Winner for '{sheet}': '{winner['col']}' ({winner['count']} pts)")
+                print(f"   🎯 REGEX Winner for '{sheet}': '{winner['col']}' ({winner['count']} pts)")
             else:
-                print(f"   ⚠️ WARNING: No valid economic series found in '{sheet}'.")
+                print(f"   ⚠️ WARNING: No macro-compliant series found in '{sheet}'.")
                 continue
 
-            # Date Parsing & Final Deduplication
+            # Date Parsing & Deduplication
             def parse_period(val):
                 try:
                     f_val = float(val)
