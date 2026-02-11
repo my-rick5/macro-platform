@@ -50,6 +50,7 @@ COPY --from=builder /root/.local /home/spark/.local
 COPY src /home/spark/src
 COPY tests /home/spark/tests
 COPY external_data /home/spark/external_data
+COPY pyfrbus/models /home/spark/models
 COPY data/library.xlsx /home/spark/data/library.xlsx
 
 # Create data/results/models directories
