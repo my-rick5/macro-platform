@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Vanilla Positional Engine v3.")
+print("🚀 Heartbeat: Final Data-Proxied Engine v4.")
 print("--------------------------------------------------")
 
 try:
@@ -16,11 +16,12 @@ except Exception as e:
     sys.exit(1)
 
 def run_pro_engine():
-    # 1. Environment Setup
+    # 1. Environment & Path Setup
     working_dir = os.getcwd()
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
     results_dir = os.path.join(working_dir, "results")
+    
     os.makedirs(results_dir, exist_ok=True)
     
     # 2. Data Loading
@@ -29,6 +30,7 @@ def run_pro_engine():
         print("❌ ERROR: No source CSVs found.")
         return
 
+    # Merging processed variables into a unified PeriodIndex dataframe
     df = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
         .assign(date=lambda x: pd.PeriodIndex(x['date'], freq='Q'))
@@ -40,10 +42,10 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 3. Model Configuration
+    # 3. Model Initialization
     model = frbus.Frbus(model_xml)
     
-    # Standard FRB/US Modes
+    # Standard FRB/US operating flags
     df['mc_mode'] = 0.0  
     df['mco_mode'] = 1.0  
 
@@ -55,17 +57,21 @@ def run_pro_engine():
         if var_name not in target_variables: return None 
         return df[var_name].iloc[0]
 
-    # 4. Iterative Window Solve
+    # 4. Iterative Timeline Solve
     current_solve_start = first_actual + 1
     
     while current_solve_start <= full_end:
         
-        # 🎯 STRATEGY: VANILLA POSITIONAL RESET (1989Q4)
+        # 🎯 STRATEGY: VANILLA RESET + DATA PROXY PATCH (1989Q4)
         if current_solve_start == pd.Period('1989Q4', freq='Q'):
-            print("🛡️ 1989Q4 Deadlock: Triggering Vanilla Reset (No Keywords)...")
+            print("🛡️ 1989Q4 Deadlock: Patching dmptmax & Triggering Reset...")
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
-            # API FIX: Exactly 3 positional arguments. No **solver_params.
+            # 🛡️ Data Patch: Resolves MissingDataError found in Build #502
+            if 'dmptmax' not in current_df.columns:
+                current_df['dmptmax'] = 0.0
+            
+            # API FIX: Vanilla 3-position call (start, end, data)
             results = model.init_trac(current_solve_start, current_solve_start, current_df)
             
             for col in results.columns:
@@ -74,6 +80,7 @@ def run_pro_engine():
             window_passed = True
             
         else:
+            # Standard quarter/window solving for 1990+
             step_size = 1 if current_solve_start < pd.Period('1991Q1', freq='Q') else 4
             current_solve_end = min(current_solve_start + (step_size - 1), full_end)
             
@@ -82,7 +89,11 @@ def run_pro_engine():
             while not window_passed and window_attempts < 50:
                 try:
                     current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
-                    # Use Vanilla call for standard windows as well
+                    
+                    # 🛡️ Ensure dmptmax persists for initialization across all windows
+                    if 'dmptmax' not in current_df.columns:
+                        current_df['dmptmax'] = 0.0
+                        
                     results = model.init_trac(current_solve_start, current_solve_end, current_df)
                     
                     for col in results.columns:
@@ -98,21 +109,24 @@ def run_pro_engine():
                     window_attempts += 1
 
         if not window_passed:
-            print(f"❌ Structural fail at window {current_solve_start}.")
+            print(f"❌ Final Structural fail at window {current_solve_start}.")
             sys.exit(1)
             
         current_solve_start += 1 if current_solve_start == pd.Period('1989Q4', freq='Q') else step_size
             
-    # 5. Export
+    # 5. Full-Sample Results Export
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     
-    print("📈 Finalizing full-sample residuals...")
-    # Final Vanilla call
+    # Ensure final data satisfies initialization check
+    if 'dmptmax' not in final_data.columns:
+        final_data['dmptmax'] = 0.0
+
+    print("📈 Finalizing full-sample trace...")
     final_results = model.init_trac(first_actual, full_end, final_data)
     final_results.to_csv(output_path)
     
-    print(f"✅ SUCCESS: Build #501 complete. Artifact at: {output_path}")
+    print(f"✅ SUCCESS: Build #503 complete. Results stored at: {output_path}")
 
 if __name__ == "__main__":
     run_pro_engine()
