@@ -15,7 +15,7 @@ except Exception as e:
     sys.exit(1)
 
 def run_pro_engine():
-    # 1. Setup
+    # 1. Environment & Path Setup
     working_dir = os.getcwd()
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
@@ -34,12 +34,12 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 3. Model Init
+    # 3. Model Initialization
     model = frbus.Frbus(model_xml)
     df['mc_mode'] = 0.0  
     df['mco_mode'] = 1.0  
     
-    # Create the registry as a full-index DataFrame immediately
+    # Persistent registry to hold all discovered/solved series
     registry_df = pd.DataFrame(index=df.index)
 
     first_actual = df.index.min()
@@ -52,17 +52,18 @@ def run_pro_engine():
         
         while not window_passed and attempts < 250:
             try:
-                # Merge current data with full history of everything discovered
+                # Merge current data with everything discovered/solved so far
                 current_df = pd.concat([df, registry_df], axis=1)
                 
-                # 1989Q4 is our 'bridge' quarter
+                # Single-quarter bridge for 1989Q4, then 4-quarter windows
                 solve_end = current_solve_start if current_solve_start == pd.Period('1989Q4', freq='Q') else min(current_solve_start + 3, full_end)
                 
                 results = model.init_trac(current_solve_start, solve_end, current_df)
                 
-                # Update registry using combine_first to preserve history but update new solve values
+                # Capture solved residuals back into registry
                 for col in results.columns:
                     if col not in target_variables:
+                        # Use combine_first to keep full history while updating solve range
                         if col not in registry_df.columns:
                             registry_df[col] = results[col]
                         else:
@@ -76,26 +77,26 @@ def run_pro_engine():
                 match = re.search(r'`([^`]+)`', msg)
                 if match:
                     missing_var = match.group(1).lower()
-                    print(f"🛡️ Discovery: BACKFILLING entire history for `{missing_var}`")
-                    # 🎯 THE FIX: Initialize the ENTIRE registry column to 0.0 
-                    # so lags (t-1, t-4) always find a valid index.
+                    print(f"🛡️ Discovery: Backfilling missing series `{missing_var}`")
+                    # 🎯 FIX: Initialize the ENTIRE timeline to 0.0 to satisfy 1990Q1 lookbacks
                     registry_df[missing_var] = 0.0
                     attempts += 1
                 else:
-                    # Catching the 'not in list' error here for debugging
-                    print(f"❌ Numerical/Alignment Fail: {msg}")
+                    print(f"❌ Unrecoverable Numerical/Lag Error: {msg}")
                     sys.exit(1)
 
         current_solve_start += 1 if current_solve_start == pd.Period('1989Q4', freq='Q') else 4
             
-    # 5. Export
+    # 5. Full-Sample Results Export
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, registry_df], axis=1)
     
     print("📈 Finalizing full-sample residuals...")
+    # Solve starting from the first possible point now that registry is populated
     final_results = model.init_trac(first_actual + 1, full_end, final_data)
     final_results.to_csv(output_path)
-    print(f"✅ SUCCESS: Build #531 complete.")
+    
+    print(f"✅ SUCCESS: Build complete. Results stored in residuals_lite.csv.")
 
 if __name__ == "__main__":
     run_pro_engine()
