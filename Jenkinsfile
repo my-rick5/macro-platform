@@ -6,22 +6,17 @@ pipeline {
     }
 
     stages {
-        stage('Initialize & Search') {
+        stage('Initialize & Prepare Data') {
             steps {
-                echo "🔍 SEARCHING for library.xlsx on the server..."
                 script {
-                    // This finds the file anywhere in the Jenkins home directory
-                    def foundPath = sh(script: "find /var/jenkins_home -name 'library.xlsx' | head -n 1", returnStdout: true).trim()
-                    
-                    if (foundPath && foundPath != "") {
-                        echo "✅ FOUND library.xlsx at: ${foundPath}"
-                        sh "mkdir -p data"
-                        sh "cp '${foundPath}' data/library.xlsx"
-                    } else {
-                        echo "⚠️ WARNING: library.xlsx not found in /var/jenkins_home."
-                        echo "Checking current workspace..."
-                        sh "ls -R data || echo 'Data folder does not exist yet'"
-                    }
+                    echo "🛠️ Preparing data for Docker build..."
+                    // If library doesn't exist, create it from the Tealbook file you ALREADY have
+                    sh """
+                        if [ ! -f data/library.xlsx ]; then
+                            echo '📝 library.xlsx not found, aliasing tealbook_raw.xlsx...'
+                            cp data/tealbook_raw.xlsx data/library.xlsx
+                        fi
+                    """
                 }
                 sh "mkdir -p results"
                 sh "docker rm -f engine-run-${env.BUILD_NUMBER} || true"
