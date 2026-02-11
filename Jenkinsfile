@@ -20,6 +20,7 @@ pipeline {
         stage('Build & Run Engine') {
             steps {
                 script {
+                    // Build the image using the local context
                     sh "docker build -t macro-engine-image:${env.BUILD_NUMBER} ."
                     
                     // Start container as a daemon
@@ -31,50 +32,54 @@ pipeline {
                         sh "docker exec -w /home/spark engine-${env.BUILD_NUMBER} python3 src/engine.py"
                         
                         echo "🧹 Generating Lite Version & Visuals (Inside Docker)..."
-sh """
-docker exec -i engine-${env.BUILD_NUMBER} python3 -u - <<-EOF
+                        sh """
+                        docker exec -i engine-${env.BUILD_NUMBER} python3 -u - <<-EOF
 import pandas as pd
 import matplotlib.pyplot as plt
 import sys
 import os
 
-# 1. Load data
 file_path = 'results/calibration_residuals_e.csv'
 if os.path.exists(file_path):
     df = pd.read_csv(file_path)
-    targets = ['LUR', 'XGDP', 'PCE', 'RFF']
+    
+    # DEBUG: Show exactly what columns the engine produced
+    print(f'🔍 Found columns in results: {df.columns.tolist()[:10]}')
+    
+    # UPDATED: These match verified Greenbook names from your logs
+    targets = ['LUR', 'GRGDP', 'GPGDP', 'GPCPI', 'GNGDP']
     present = [c for c in targets if c in df.columns]
 
     if present:
-        # Create Lite Version
+        # Create Lite Version (Last 40 quarters)
         lite_df = df[present].dropna(how='all').tail(40)
         lite_df.to_csv('results/lite_residuals.csv', index=False)
         
-        # 2. FORCE PRINT TO CONSOLE
-        print('\\n' + '='*30)
-        print('📊 LITE STATISTICS')
-        print('='*30)
+        # Print Stats to Jenkins Console
+        print('\\n' + '='*30 + '\\n📊 LITE STATISTICS\\n' + '='*30)
         print(lite_df.describe())
-        sys.stdout.flush()  # Force Jenkins to show it now
+        sys.stdout.flush()
 
-        # 3. SAVE GRAPH
+        # Create Visuals
         plt.figure(figsize=(10, 6))
         lite_df.plot(marker='o')
-        plt.title('Key Macro Residuals (Last 40 Qtrs)')
-        plt.grid(True)
+        plt.title('Key Macro Residuals (Verified Targets)')
+        plt.ylabel('Residual Value')
+        plt.grid(True, linestyle='--', alpha=0.7)
         plt.savefig('results/residual_plot.png')
-        print('\\n✅ Visuals saved to results/residual_plot.png')
+        print('\\n✅ Visuals and Lite CSV created.')
     else:
-        print('⚠️ Warning: No target variables found.')
+        print('⚠️ Warning: No target variables found. Check the DEBUG list above.')
 else:
-    print('❌ Error: calibration_residuals_e.csv is missing!')
+    print('❌ Error: Raw results file not found!')
 EOF
-"""
+                        """
                         
                         // Copy everything back to the host before cleaning up
                         sh "docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/"
                         
                     } finally {
+                        // Ensure container is always removed
                         sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
                     }
                 }
@@ -84,7 +89,7 @@ EOF
 
     post {
         always {
-            // This will now find: calibration_residuals_e.csv, lite_residuals.csv, and residual_plot.png
+            // Archive all results, including the large raw file and the new visual plot
             archiveArtifacts artifacts: 'results/*', allowEmptyArchive: true
         }
     }
