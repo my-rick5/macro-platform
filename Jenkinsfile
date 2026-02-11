@@ -2,43 +2,42 @@ pipeline {
     agent any
 
     environment {
-        PYTHONPATH = "/opt/macro_platform:/home/spark/.local/lib/python3.9/site-packages"
+        // We use the internal container path for PYTHONPATH
+        PYTHONPATH = "/home/spark/.local/lib/python3.9/site-packages:/home/spark/src"
     }
 
     stages {
         stage('Initialize') {
             steps {
-                sh "mkdir -p results models data"
-                // || true prevents failure if the container doesn't exist yet
+                // Cleanup any stale containers from this build number
                 sh "docker rm -f engine-run-${env.BUILD_NUMBER} || true"
             }
         }
 
         stage('Build Image') {
             steps {
-                // Ensure your .dockerignore no longer blocks .csv files
-                sh "docker build -t macro-engine-image ."
+                echo "🔨 Building Image (including external_data and src)..."
+                sh "docker build -t macro-engine-image:${env.BUILD_NUMBER} ."
             }
         }
 
-        stage('Debug File System') {
+        stage('Debug & Run') {
             steps {
-                echo "--- Host View (Jenkins Workspace) ---"
-                sh "ls -R"
+                // 1. Start the container WITHOUT the -v mount. 
+                // This forces it to use the files INSIDE the image.
+                sh "docker run -d --name engine-run-${env.BUILD_NUMBER} macro-engine-image:${env.BUILD_NUMBER} sleep 300"
                 
-                // Spin up container in detached mode to allow exec
-                sh "docker run -d --name engine-run-${env.BUILD_NUMBER} -v \$(pwd):/home/spark macro-engine-image sleep 100"
-                
-                echo "--- Container View ---"
-                // Correctly references the current build's container
+                echo "--- Internal Container View ---"
                 sh "docker exec engine-run-${env.BUILD_NUMBER} ls -R /home/spark"
-            }
-        }
-
-        stage('Run Engine') {
-            steps {
+                
                 echo "🚀 Running Model Calibration..."
-                sh "docker exec -w /home/spark -e PYTHONPATH=${env.PYTHONPATH} engine-run-${env.BUILD_NUMBER} python3 /home/spark/src/engine.py"
+                // Execute the engine using the internal path
+                sh "docker exec -w /home/spark -e PYTHONPATH=${env.PYTHONPATH} engine-run-${env.BUILD_NUMBER} python3 src/engine.py"
+                
+                echo "📥 Extracting Results from Container..."
+                // Since we aren't mounting a volume, we must manually copy the results out to the Jenkins host
+                sh "mkdir -p results"
+                sh "docker cp engine-run-${env.BUILD_NUMBER}:/home/spark/results/. ./results/"
             }
         }
     }
@@ -56,7 +55,7 @@ pipeline {
             echo "🟢 Calibration Successful!"
         }
         failure {
-            echo "🔴 Pipeline Failed. Check the Debug output above for missing files or path issues."
+            echo "🔴 Pipeline Failed. If 'external_data' is missing above, check Dockerfile COPY."
         }
     }
 }
