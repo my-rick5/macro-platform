@@ -4,7 +4,7 @@ import re
 import sys
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Full-History Recovery Engine v17.")
+print("🚀 Heartbeat: Final Cold-Start Backfill Engine v18.")
 print("--------------------------------------------------")
 
 try:
@@ -15,7 +15,7 @@ except Exception as e:
     sys.exit(1)
 
 def run_pro_engine():
-    # 1. Environment Setup
+    # 1. Environment & Path Setup
     working_dir = os.getcwd()
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
@@ -39,8 +39,8 @@ def run_pro_engine():
     df['mc_mode'] = 0.0  
     df['mco_mode'] = 1.0  
     
-    # 🎯 FIX: Registry is a full-index DataFrame from the start
-    registry_df = pd.DataFrame(0.0, index=df.index, columns=[])
+    # Persistent registry to hold all discovered/solved series
+    registry_df = pd.DataFrame(index=df.index)
 
     first_actual = df.index.min()
     full_end = df.index.max()
@@ -50,48 +50,53 @@ def run_pro_engine():
         window_passed = False
         attempts = 0
         
-        while not window_passed and attempts < 200:
+        while not window_passed and attempts < 250:
             try:
-                # 🛡️ Always provide the FULL history to satisfy lagged variables
+                # Merge current data with everything discovered/solved so far
                 current_df = pd.concat([df, registry_df], axis=1)
                 
+                # Single-quarter bridge for 1989Q4, then 4-quarter windows
                 solve_end = current_solve_start if current_solve_start == pd.Period('1989Q4', freq='Q') else min(current_solve_start + 3, full_end)
                 
-                # Trac solve requires data covering the solve range + any required lags
                 results = model.init_trac(current_solve_start, solve_end, current_df)
                 
-                # Update the registry with solved values to provide 'state' for the next window
+                # Capture solved residuals back into registry
                 for col in results.columns:
                     if col not in target_variables:
-                        registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 0.0)
+                        # Use combine_first to keep full history while updating solve range
+                        if col not in registry_df.columns:
+                            registry_df[col] = results[col]
+                        else:
+                            registry_df[col] = results[col].combine_first(registry_df[col])
                 
                 window_passed = True
-                print(f"✅ Window {current_solve_start} to {solve_end} solved.")
+                print(f"✅ Window {current_solve_start} solved.")
                 
             except Exception as e:
                 msg = str(e)
                 match = re.search(r'`([^`]+)`', msg)
                 if match:
                     missing_var = match.group(1).lower()
-                    print(f"🛡️ Discovery: Adding missing series `{missing_var}`")
+                    print(f"🛡️ Discovery: Backfilling missing series `{missing_var}`")
+                    # 🎯 FIX: Initialize the ENTIRE timeline to 0.0 to satisfy 1990Q1 lookbacks
                     registry_df[missing_var] = 0.0
                     attempts += 1
                 else:
                     print(f"❌ Unrecoverable Numerical/Lag Error: {msg}")
-                    # If it's a 'not in list' error, we likely have a date alignment issue in the CSVs
                     sys.exit(1)
 
         current_solve_start += 1 if current_solve_start == pd.Period('1989Q4', freq='Q') else 4
             
-    # 5. Full-Sample Export
+    # 5. Full-Sample Results Export
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, registry_df], axis=1)
     
     print("📈 Finalizing full-sample residuals...")
+    # Solve starting from the first possible point now that registry is populated
     final_results = model.init_trac(first_actual + 1, full_end, final_data)
     final_results.to_csv(output_path)
     
-    print(f"✅ SUCCESS: Build #526 complete.")
+    print(f"✅ SUCCESS: Build complete. Results stored in residuals_lite.csv.")
 
 if __name__ == "__main__":
     run_pro_engine()
