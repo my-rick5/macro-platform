@@ -50,9 +50,26 @@ def clean_fed_excel(excel_path, output_dir):
 
             # 2. Date Parsing
             def parse_period(val):
-                s = str(val).strip()
-                match = re.search(r'(\d{4})Q(\d)', s)
-                return f"{match.group(1)}Q{match.group(2)}" if match else None
+                try:
+                    s = str(val).strip()
+                    # 1. Handle YYYYQX strings (Standard)
+                    match = re.search(r'(\d{4})Q(\d)', s)
+                    if match:
+                        return f"{match.group(1)}Q{match.group(2)}"
+                    
+                    # 2. Handle Decimal Years (e.g., 1967.2 or 1967.25)
+                    f_val = float(s)
+                    year = int(f_val)
+                    remainder = f_val - year
+                    
+                    if remainder < 0.1: q = 1     # .0
+                    elif remainder < 0.3: q = 2   # .2 or .25
+                    elif remainder < 0.6: q = 3   # .5
+                    else: q = 4                   # .75
+                    
+                    return f"{year}Q{q}"
+                except:
+                    return None
 
             df['date'] = df['date_raw'].apply(parse_period)
             final_df = df.dropna(subset=['date', var_name])
