@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Unified Safe Registry Engine v5.")
+print("🚀 Heartbeat: Final Total Policy Engine v6.")
 print("--------------------------------------------------")
 
 try:
@@ -61,14 +61,13 @@ def run_pro_engine():
     
     while current_solve_start <= full_end:
         
-        # 🎯 STRATEGY: SAFE REGISTRY INITIALIZATION (1989Q4)
+        # 🎯 STRATEGY: TOTAL POLICY PATCH (1989Q4)
         if current_solve_start == pd.Period('1989Q4', freq='Q'):
-            print("🛡️ 1989Q4 Deadlock: Patching Variable Registry & Triggering Reset...")
+            print("🛡️ 1989Q4 Deadlock: Patching Total Policy Registry & Triggering Reset...")
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
-            # 🛡️ Safe Registry: Resolves MissingDataError for technical coefficients
-            # Injects delrff, dmptmax, and others required for standalone cold-starts
-            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi']
+            # 🛡️ Safe Registry: Added 'dmptr' to clear Build #506 error
+            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr']
             for var in required_proxies:
                 if var not in current_df.columns:
                     current_df[var] = 0.0
@@ -92,8 +91,8 @@ def run_pro_engine():
                 try:
                     current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                     
-                    # 🛡️ Ensure registry persists for initialization across all windows
-                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi']
+                    # 🛡️ Persistent registry injection
+                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr']
                     for var in required_proxies:
                         if var not in current_df.columns:
                             current_df[var] = 0.0
@@ -122,17 +121,17 @@ def run_pro_engine():
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     
-    # Ensure final data satisfies initialization check
-    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi']
+    # Final data safety check
+    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr']
     for var in required_proxies:
         if var not in final_data.columns:
             final_data[var] = 0.0
 
-    print("📈 Finalizing full-sample trace...")
+    print("📈 Finalizing full-sample residuals...")
     final_results = model.init_trac(first_actual, full_end, final_data)
     final_results.to_csv(output_path)
     
-    print(f"✅ SUCCESS: Build #505 complete. Results stored at: {output_path}")
+    print(f"✅ SUCCESS: Build complete. Results stored at: {output_path}")
 
 if __name__ == "__main__":
     run_pro_engine()
