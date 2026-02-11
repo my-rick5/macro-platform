@@ -4,7 +4,7 @@ import re
 import sys
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Full-Timeline Recovery Engine v19.")
+print("🚀 Heartbeat: Safe Harbor Engine v20 (Pivot to 2004).")
 print("--------------------------------------------------")
 
 try:
@@ -15,12 +15,12 @@ except Exception as e:
     sys.exit(1)
 
 def run_pro_engine():
-    # 1. Environment Setup
+    # 1. Setup
     working_dir = os.getcwd()
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
     results_dir = os.path.join(working_dir, "results")
-    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(results_dir, exist_index=True)
     
     # 2. Data Loading
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
@@ -34,41 +34,35 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 3. Model Initialization
+    # 3. Model Init
     model = frbus.Frbus(model_xml)
     df['mc_mode'] = 0.0  
     df['mco_mode'] = 1.0  
-    
-    # 🎯 FIX: Registry MUST have the exact same index as the main df
     registry_df = pd.DataFrame(index=df.index)
 
-    first_actual = df.index.min()
+    # 🎯 THE PIVOT: Start from 2004Q1
+    # We use this as a 'Safe Harbor' to verify model integrity.
+    safe_harbor_start = pd.Period('2004Q1', freq='Q')
     full_end = df.index.max()
-    current_solve_start = first_actual + 1
+    current_solve_start = safe_harbor_start
     
+    print(f"⚓ Anchoring at Safe Harbor: {safe_harbor_start}")
+
     while current_solve_start <= full_end:
         window_passed = False
         attempts = 0
         
-        while not window_passed and attempts < 300:
+        while not window_passed and attempts < 100:
             try:
-                # Merge current data with our aligned registry
                 current_df = pd.concat([df, registry_df], axis=1)
-                
-                # Use current_solve_start as both start and end to clear 1989/1990 bridge
-                # if it continues to fail, we shift to a larger window
                 solve_end = min(current_solve_start + 3, full_end)
                 
+                # Standard window solve
                 results = model.init_trac(current_solve_start, solve_end, current_df)
                 
-                # Update the registry while maintaining full index alignment
                 for col in results.columns:
                     if col not in target_variables:
-                        # combine_first handles the update while keeping the full 1989-1990 history
-                        if col not in registry_df.columns:
-                            registry_df[col] = results[col]
-                        else:
-                            registry_df[col] = results[col].combine_first(registry_df[col])
+                        registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 0.0)
                 
                 window_passed = True
                 print(f"✅ Window {current_solve_start} solved.")
@@ -78,27 +72,23 @@ def run_pro_engine():
                 match = re.search(r'`([^`]+)`', msg)
                 if match:
                     missing_var = match.group(1).lower()
-                    print(f"🛡️ Discovery: Initializing full series for `{missing_var}`")
-                    # 🎯 FIX: Initialize across the ENTIRE timeline to prevent "not in list"
+                    print(f"🛡️ Discovery: Adding `{missing_var}`")
                     registry_df[missing_var] = 0.0
                     attempts += 1
                 else:
-                    print(f"❌ Unrecoverable Error: {msg}")
-                    # Force exit to Jenkins to review the logs
+                    print(f"❌ Structural Failure at {current_solve_start}: {msg}")
                     sys.exit(1)
 
-        # Move forward by the window size
-        current_solve_start = min(current_solve_start + 4, full_end + 1)
+        current_solve_start += 4
             
-    # 5. Finalize
+    # 5. Export
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, registry_df], axis=1)
     
-    print("📈 Generating final artifact...")
-    final_results = model.init_trac(first_actual + 1, full_end, final_data)
+    print("📈 Finalizing 2004-Present residuals...")
+    final_results = model.init_trac(safe_harbor_start, full_end, final_data)
     final_results.to_csv(output_path)
-    
-    print(f"✅ SUCCESS: Build #533 complete. Artifact at: {output_path}")
+    print(f"✅ SUCCESS: Pivot Build #535 complete.")
 
 if __name__ == "__main__":
     run_pro_engine()
