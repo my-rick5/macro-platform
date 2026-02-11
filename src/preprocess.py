@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #673 Nuclear Hunter)... ")
+    print(f"🎬 Starting Preprocessor (Build #675 Tiered Hunter)... ")
     os.makedirs(output_dir, exist_ok=True)
     
     try:
@@ -22,34 +22,40 @@ def clean_fed_excel(excel_path, output_dir):
             df = pd.read_excel(xls, sheet_name=sheet, skiprows=1)
             df.rename(columns={df.columns[0]: 'date_raw'}, inplace=True)
             
-            candidates = []
+            # --- TIERED HUNTER LOGIC ---
+            gold_candidates = []
+            silver_candidates = []
+            
             for c in df.columns:
                 if c == 'date_raw': continue
                 c_str = str(c).lower()
-                
-                # 1. VERSION GUARD: Reject anything with multiple dots (e.g., 3.8.3)
-                if c_str.count('.') >= 2: continue
+                if c_str.count('.') >= 2: continue # Version Guard
                 
                 converted = pd.to_numeric(df[c], errors='coerce')
                 valid_count = converted.notna().sum()
                 
-                # 2. STRICT VALIDATION: High density + Realistic Macro Mean
-                if valid_count > 150: 
+                # Broaden search: require at least 100 points
+                if valid_count > 100: 
                     avg_val = converted.mean()
                     if not (-10 < avg_val < 25): continue
                     
-                    # 3. KEYWORD ENFORCEMENT: Must have a relevant label
                     keywords = ['rate', 'unemp', 'lur', 'val', 'adj', 'index', var_name]
-                    if not any(k in c_str for k in keywords): continue
+                    has_keyword = any(k in c_str for k in keywords)
                     
-                    # 4. SCORING: Reward exact model matches and 'rate'
-                    score = (50 if any(k in c_str for k in [var_name, 'rate']) else 10)
-                    candidates.append({'col': c, 'data': converted, 'score': score, 'count': valid_count})
+                    candidate = {'col': c, 'data': converted, 'count': valid_count}
+                    if has_keyword:
+                        gold_candidates.append(candidate)
+                    else:
+                        silver_candidates.append(candidate)
             
-            if candidates:
-                winner = sorted(candidates, key=lambda x: (x['score'], x['count']), reverse=True)[0]
+            # Selection Priority: Gold (Keywords) -> Silver (Density)
+            final_selection = sorted(gold_candidates, key=lambda x: x['count'], reverse=True) or \
+                              sorted(silver_candidates, key=lambda x: x['count'], reverse=True)
+
+            if final_selection:
+                winner = final_selection[0]
                 df[var_name] = winner['data']
-                print(f"   🎯 NUCLEAR Winner for '{sheet}': '{winner['col']}' ({winner['count']} pts)")
+                print(f"   🎯 TIERED Winner for '{sheet}': '{winner['col']}' ({winner['count']} pts)")
             else:
                 print(f"   ⚠️ WARNING: No valid economic series found in '{sheet}'.")
                 continue
