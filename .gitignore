@@ -19,7 +19,6 @@ venv/
 
 # === Data & Large Artifacts ===
 # Ignore local backtest results and dbt outputs
-data/
 target/
 logs/
 results/

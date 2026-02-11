@@ -19,7 +19,5 @@ jenkins_home/
 logs/
 mlruns/
 output/
-data/
 *.json
 
-.git
