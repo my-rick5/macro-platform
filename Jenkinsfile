@@ -43,33 +43,42 @@ file_path = 'results/calibration_residuals_e.csv'
 if os.path.exists(file_path):
     df = pd.read_csv(file_path)
     
-    # DEBUG: Show exactly what columns the engine produced
-    print(f'🔍 Found columns in results: {df.columns.tolist()[:10]}')
+    # Mapping engine names to readable labels
+    mapping = {
+        'anngr': 'GDP Growth Resid',
+        'delrff': 'Fed Funds Resid',
+        'adjlegrt': 'Labor/Unemp Resid',
+        'ddockm': 'Import Resid',
+        'ddockx': 'Export Resid'
+    }
     
-    # UPDATED: These match verified Greenbook names from your logs
-    targets = ['LUR', 'GRGDP', 'GPGDP', 'GPCPI', 'GNGDP']
-    present = [c for c in targets if c in df.columns]
+    # Filter for what actually exists in the file
+    present_targets = [c for c in mapping.keys() if c in df.columns]
 
-    if present:
+    if present_targets:
         # Create Lite Version (Last 40 quarters)
-        lite_df = df[present].dropna(how='all').tail(40)
+        lite_df = df[present_targets].dropna(how='all').tail(40)
+        
+        # Rename columns for the Lite CSV and Plot
+        lite_df.rename(columns=mapping, inplace=True)
         lite_df.to_csv('results/lite_residuals.csv', index=False)
         
-        # Print Stats to Jenkins Console
         print('\\n' + '='*30 + '\\n📊 LITE STATISTICS\\n' + '='*30)
         print(lite_df.describe())
         sys.stdout.flush()
 
         # Create Visuals
-        plt.figure(figsize=(10, 6))
-        lite_df.plot(marker='o')
-        plt.title('Key Macro Residuals (Verified Targets)')
+        plt.figure(figsize=(12, 7))
+        lite_df.plot(marker='o', alpha=0.8)
+        plt.title('Key Macro Residuals (Engine Internal Names)')
         plt.ylabel('Residual Value')
-        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend(loc='best', fontsize='small')
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.tight_layout()
         plt.savefig('results/residual_plot.png')
         print('\\n✅ Visuals and Lite CSV created.')
     else:
-        print('⚠️ Warning: No target variables found. Check the DEBUG list above.')
+        print(f'⚠️ Warning: No targets found. Columns found: {df.columns.tolist()[:15]}')
 else:
     print('❌ Error: Raw results file not found!')
 EOF
