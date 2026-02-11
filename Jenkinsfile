@@ -83,4 +83,10 @@ pipeline {
             echo "🟢 SUCCESS: Build #${env.BUILD_NUMBER} - Residuals generated and archived."
         }
         failure {
-            echo "🔴 FAILURE: Build #${env.BUILD_NUMBER
+            echo "🔴 FAILURE: Build #${env.BUILD_NUMBER}
+        }
+    }
+}
+
+
+
