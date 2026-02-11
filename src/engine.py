@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Total Policy Engine v6.")
+print("🚀 Heartbeat: Final Universal Identity Engine v7.")
 print("--------------------------------------------------")
 
 try:
@@ -61,13 +61,14 @@ def run_pro_engine():
     
     while current_solve_start <= full_end:
         
-        # 🎯 STRATEGY: TOTAL POLICY PATCH (1989Q4)
+        # 🎯 STRATEGY: UNIVERSAL IDENTITY PATCH (1989Q4)
         if current_solve_start == pd.Period('1989Q4', freq='Q'):
-            print("🛡️ 1989Q4 Deadlock: Patching Total Policy Registry & Triggering Reset...")
+            print("🛡️ 1989Q4 Deadlock: Patching Universal Identities & Triggering Reset...")
             current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
             
-            # 🛡️ Safe Registry: Added 'dmptr' to clear Build #506 error
-            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr']
+            # 🛡️ Universal Patch: Resolves MissingDataError for technical/behavioral series
+            # Added 'dpadj' to clear Build #508 error
+            required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj']
             for var in required_proxies:
                 if var not in current_df.columns:
                     current_df[var] = 0.0
@@ -92,7 +93,7 @@ def run_pro_engine():
                     current_df = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
                     
                     # 🛡️ Persistent registry injection
-                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr']
+                    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj']
                     for var in required_proxies:
                         if var not in current_df.columns:
                             current_df[var] = 0.0
@@ -122,7 +123,7 @@ def run_pro_engine():
     final_data = pd.concat([df, pd.DataFrame(missing_registry, index=df.index)], axis=1)
     
     # Final data safety check
-    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr']
+    required_proxies = ['dmptmax', 'delrff', 'dmptlur', 'dmptpi', 'dmptr', 'dpadj']
     for var in required_proxies:
         if var not in final_data.columns:
             final_data[var] = 0.0
