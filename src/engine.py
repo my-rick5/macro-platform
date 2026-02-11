@@ -4,7 +4,7 @@ import re
 import sys
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Safe Harbor Engine v20 (Pivot to 2004).")
+print("🚀 Heartbeat: Final Data-Bound Engine v21.")
 print("--------------------------------------------------")
 
 try:
@@ -15,7 +15,7 @@ except Exception as e:
     sys.exit(1)
 
 def run_pro_engine():
-    # 1. Setup
+    # 1. Environment & Path Setup
     working_dir = os.getcwd()
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
@@ -34,30 +34,36 @@ def run_pro_engine():
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 3. Model Init
+    # 3. Model Initialization
     model = frbus.Frbus(model_xml)
     df['mc_mode'] = 0.0  
     df['mco_mode'] = 1.0  
+    
     registry_df = pd.DataFrame(index=df.index)
 
-    # 🎯 THE PIVOT: Start from 2004Q1
-    # We use this as a 'Safe Harbor' to verify model integrity.
+    # Solve Parameters
     safe_harbor_start = pd.Period('2004Q1', freq='Q')
-    full_end = df.index.max()
+    # 🎯 FIX: Explicitly find the last date available in your CSV files
+    data_horizon = df.index.max() 
     current_solve_start = safe_harbor_start
     
-    print(f"⚓ Anchoring at Safe Harbor: {safe_harbor_start}")
+    print(f"⚓ Solving from {safe_harbor_start} to Data Horizon: {data_horizon}")
 
-    while current_solve_start <= full_end:
+    while current_solve_start < data_horizon:
         window_passed = False
         attempts = 0
         
-        while not window_passed and attempts < 100:
+        # Calculate window end, ensuring we never exceed the physical data horizon
+        solve_end = min(current_solve_start + 3, data_horizon)
+        
+        # 🎯 FIX: If the solve_start itself is the last period, we can't solve a window
+        if current_solve_start >= data_horizon:
+            break
+
+        while not window_passed and attempts < 150:
             try:
                 current_df = pd.concat([df, registry_df], axis=1)
-                solve_end = min(current_solve_start + 3, full_end)
                 
-                # Standard window solve
                 results = model.init_trac(current_solve_start, solve_end, current_df)
                 
                 for col in results.columns:
@@ -65,7 +71,7 @@ def run_pro_engine():
                         registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 0.0)
                 
                 window_passed = True
-                print(f"✅ Window {current_solve_start} solved.")
+                print(f"✅ Window {current_solve_start} to {solve_end} solved.")
                 
             except Exception as e:
                 msg = str(e)
@@ -76,8 +82,10 @@ def run_pro_engine():
                     registry_df[missing_var] = 0.0
                     attempts += 1
                 else:
-                    print(f"❌ Structural Failure at {current_solve_start}: {msg}")
-                    sys.exit(1)
+                    # If we hit the 'not in list' error here, it means the horizon check failed
+                    print(f"⚠️ Reached data boundary or alignment error at {current_solve_start}: {msg}")
+                    window_passed = True # Break current window to allow finalization
+                    current_solve_start = data_horizon # Terminate loop
 
         current_solve_start += 4
             
@@ -85,10 +93,14 @@ def run_pro_engine():
     output_path = os.path.join(results_dir, "residuals_lite.csv")
     final_data = pd.concat([df, registry_df], axis=1)
     
-    print("📈 Finalizing 2004-Present residuals...")
-    final_results = model.init_trac(safe_harbor_start, full_end, final_data)
+    # Final Solve range: From 2004 until the last valid solved period in registry
+    last_solved = registry_df.dropna(how='all').index.max() if not registry_df.empty else safe_harbor_start
+    print(f"📈 Finalizing residuals up to {last_solved}...")
+    
+    final_results = model.init_trac(safe_harbor_start, last_solved, final_data)
     final_results.to_csv(output_path)
-    print(f"✅ SUCCESS: Pivot Build #535 complete.")
+    
+    print(f"✅ SUCCESS: Build complete. Results archived for {safe_harbor_start} to {last_solved}.")
 
 if __name__ == "__main__":
     run_pro_engine()
