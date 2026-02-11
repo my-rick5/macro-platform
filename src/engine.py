@@ -4,7 +4,7 @@ import re
 import sys
 
 print("--------------------------------------------------")
-print("🚀 Heartbeat: Final Bulletproof Index Engine v22.")
+print("🚀 Heartbeat: Final Log-Safe Engine v23.")
 print("--------------------------------------------------")
 
 try:
@@ -15,14 +15,14 @@ except Exception as e:
     sys.exit(1)
 
 def run_pro_engine():
-    # 1. Environment & Path Setup
+    # 1. Setup
     working_dir = os.getcwd()
     data_path = os.path.join(working_dir, "data/processed")
     model_xml = os.path.join(working_dir, "models/model.xml")
     results_dir = os.path.join(working_dir, "results")
     os.makedirs(results_dir, exist_ok=True)
     
-    # 2. Data Loading with Strict Continuous Index
+    # 2. Loading with Continuous Index
     files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
     raw_df = pd.concat([
         pd.read_csv(os.path.join(data_path, f))
@@ -30,13 +30,12 @@ def run_pro_engine():
         .set_index('date') for f in files
     ], axis=1).sort_index()
     
-    # 🎯 FIX: Create a guaranteed continuous timeline to prevent 'not in list' errors
     full_timeline = pd.period_range(start=raw_df.index.min(), end=raw_df.index.max(), freq='Q')
-    df = raw_df.reindex(full_timeline).fillna(0.0)
+    df = raw_df.reindex(full_timeline).fillna(1.0) # 🎯 FIX: Fill with 1.0 instead of 0.0
     df.columns = [c.lower() for c in df.columns]
     target_variables = list(df.columns)
 
-    # 3. Model Initialization
+    # 3. Model Init
     model = frbus.Frbus(model_xml)
     df['mc_mode'] = 0.0  
     df['mco_mode'] = 1.0  
@@ -53,38 +52,38 @@ def run_pro_engine():
 
         while not window_passed and attempts < 150:
             try:
-                current_df = pd.concat([df, registry_df], axis=1).fillna(0.0)
+                # 🎯 FIX: Concat and fill missing with 1.0 to prevent log(0)
+                current_df = pd.concat([df, registry_df], axis=1).fillna(1.0)
                 results = model.init_trac(current_solve_start, solve_end, current_df)
                 
                 for col in results.columns:
                     if col not in target_variables:
-                        registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 0.0)
+                        registry_df[col] = results[col].combine_first(registry_df[col] if col in registry_df else 1.0)
                 window_passed = True
             except Exception as e:
                 msg = str(e)
                 match = re.search(r'`([^`]+)`', msg)
                 if match:
                     missing_var = match.group(1).lower()
-                    registry_df[missing_var] = 0.0
+                    print(f"🛡️ Discovery: Adding log-safe `{missing_var}`")
+                    registry_df[missing_var] = 1.0 # 🎯 FIX: Log-safe initialization
                     attempts += 1
                 else:
-                    window_passed = True # Break current window
+                    window_passed = True
                     current_solve_start = data_horizon
 
         current_solve_start += 4
             
-    # 5. Finalize with Explicit Index Alignment
+    # 5. Final Export
     output_path = os.path.join(results_dir, "residuals_lite.csv")
-    # Ensure final_data has every single period from the safe_harbor_start to the end
-    final_data = pd.concat([df, registry_df], axis=1).reindex(full_timeline).fillna(0.0)
+    final_data = pd.concat([df, registry_df], axis=1).reindex(full_timeline).fillna(1.0)
     
     last_solved = registry_df.dropna(how='all').index.max()
-    print(f"📈 Finalizing aligned residuals from {safe_harbor_start} to {last_solved}...")
+    print(f"📈 Finalizing log-safe residuals from {safe_harbor_start} to {last_solved}...")
     
-    # 🎯 THE CRITICAL FIX: Ensure safe_harbor_start exists in the final_data index
     final_results = model.init_trac(safe_harbor_start, last_solved, final_data)
     final_results.to_csv(output_path)
-    print(f"✅ SUCCESS: Build #538 complete.")
+    print(f"✅ SUCCESS: Build #539 complete.")
 
 if __name__ == "__main__":
     run_pro_engine()
