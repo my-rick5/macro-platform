@@ -83,10 +83,11 @@ pipeline {
             echo "🟢 SUCCESS: Build #${env.BUILD_NUMBER} - Residuals generated and archived."
         }
         failure {
-            echo "🔴 FAILURE: Build #${env.BUILD_NUMBER}
+            // This is the line that tripped up Build #599
+            echo "🔴 FAILURE: Build #${env.BUILD_NUMBER} - Check 'Internal Container View' in logs."
         }
     }
-}
+} // Final closing brace for the pipeline
 
 
 
