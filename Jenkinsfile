@@ -15,6 +15,16 @@ pipeline {
             }
         }
 
+        stage('Debug File System') {
+            steps {
+                echo "--- Host View (Jenkins Workspace) ---"
+                sh "ls -R"  // Recursively list everything in the workspace
+                
+                echo "--- Container View ---"
+                sh "docker exec engine-run-583 ls -R /home/spark"
+            }
+        }
+
         stage('Run Engine') {
             steps {
                 script {
