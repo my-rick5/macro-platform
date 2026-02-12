@@ -10,10 +10,7 @@ pipeline {
             steps {
                 script {
                     echo "🧹 SCORCHED EARTH: Clearing ALL unused Docker images and cache..."
-                    // '-a' removes all unused images, not just dangling ones
                     sh "docker system prune -a -f --volumes || true"
-                    
-                    echo "📊 Checking available disk space..."
                     sh "df -h /"
                 }
             }
@@ -22,14 +19,11 @@ pipeline {
         stage('Build & Bake Data') {
             steps {
                 sh """
-                    # Ensure the base image exists BEFORE we start building
                     docker pull debian:12-slim
-
                     echo "📂 Verifying context before build..."
                     ls -d data/library.xlsx external_data/longdata.csv
                     
-                    echo "🚀 Starting Build #748 (Legacy Mode)..."
-                    # Removed --progress=plain for compatibility
+                    echo "🚀 Starting Build ${env.BUILD_NUMBER}..."
                     docker build --no-cache -t ${IMAGE_NAME} .
                 """
             }
@@ -39,13 +33,16 @@ pipeline {
             steps {
                 sh """
                     mkdir -p results
-                    # DEBUG: List exactly what is inside the data folders in the image
-                    docker run --rm ${IMAGE_NAME} ls -R /home/spark/external_data
+                    mkdir -p debug_data
                     
+                    # 1. Run the container
                     docker run --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
-                    sleep 30
-                    docker logs engine-${env.BUILD_NUMBER}
+                    
+                    # 2. Extract Final Results
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
+                    
+                    # 3. NEW: Extract Preprocessed Data (to verify the 'unemp.csv' timestamps)
+                    docker cp engine-${env.BUILD_NUMBER}:/home/spark/external_data/. ./debug_data/
                 """
             }
         }
@@ -53,11 +50,16 @@ pipeline {
 
     post {
         always {
-            sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
-            archiveArtifacts artifacts: 'results/*.csv', allowEmptyArchive: true
-            
-            // Clean up the specific image we just built to save space for the NEXT run
-            sh "docker rmi ${IMAGE_NAME} || true"
+            script {
+                // Remove the container
+                sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
+                
+                # Archive both the final results and the preprocessed debug files
+                archiveArtifacts artifacts: 'results/*.csv, debug_data/*.csv', allowEmptyArchive: true
+                
+                // Clean up the specific image
+                sh "docker rmi ${IMAGE_NAME} || true"
+            }
         }
     }
 }
