@@ -22,9 +22,9 @@ pipeline {
         stage('Build & Bake Data') {
             steps {
                 sh """
-                    echo "📂 Current Directory Content:"
-                    ls -R
-                    docker build --no-cache -t ${IMAGE_NAME} .
+                    echo "🚀 Starting Build #746..."
+                    # Adding --progress=plain helps see exactly where it fails in Jenkins
+                    docker build --no-cache --progress=plain -t ${IMAGE_NAME} .
                 """
             }
         }
