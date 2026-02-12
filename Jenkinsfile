@@ -39,7 +39,7 @@ pipeline {
                     # DEBUG: List exactly what is inside the data folders in the image
                     docker run --rm ${IMAGE_NAME} ls -R /home/spark/external_data
                     
-                    docker run -d --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
+                    docker run --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
                     sleep 30
                     docker logs engine-${env.BUILD_NUMBER}
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
