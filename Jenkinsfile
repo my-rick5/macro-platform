@@ -22,6 +22,9 @@ pipeline {
         stage('Build & Bake Data') {
             steps {
                 sh """
+                    # Ensure the base image exists BEFORE we start building
+                    docker pull debian:12-slim
+
                     echo "📂 Verifying context before build..."
                     ls -d data/library.xlsx external_data/longdata.csv
                     
