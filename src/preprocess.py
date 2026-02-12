@@ -1,8 +1,15 @@
 import pandas as pd
 import os
+import datetime
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #720 - Stricter Targeting)... ")
+    # Generation timestamp for audit trail
+    now = datetime.datetime.now()
+    timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    file_tag = now.strftime("%Y%m%d_%H%M%S")
+    
+    print(f"🎬 Starting Preprocessor (Build #721 - Timestamped Audit)...")
+    print(f"   🕒 Run Time: {timestamp_str}")
     
     # --- ABSOLUTE WIPE ---
     try:
@@ -20,10 +27,10 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    # Whitelist of approved headers for the initial load
+    # Whitelist of approved headers
     allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0', 'LURF0']
     
-    # SYNCED MAPPING: Using 'unemp' to match the Residual Header exactly
+    # SYNCED MAPPING
     mapping = {
         'unemp': 'unemp', 
         'lur':   'unemp', 
@@ -41,24 +48,23 @@ def clean_fed_excel(excel_path, output_dir):
             
             # --- PURGE NON-WHITELISTED ---
             cols_to_keep = [c for c in df.columns if str(c).upper().strip() in allowed_headers]
-            # If no whitelist hits, keep all columns to avoid empty DF, but we will filter next
             if cols_to_keep:
                 df = df[cols_to_keep]
 
             # --- STRICTER TARGET SELECTION ---
-            # We need the column with 'F0' that is NOT a Date or ID
             target = None
             for col in df.columns:
                 c_upper = str(col).upper().strip()
+                # Must have F0, but cannot be a Date/Period/Stamp column
                 if 'F0' in c_upper and all(x not in c_upper for x in ['DATE', 'PERIOD', 'STAMP']):
                     target = col
                     break
 
             if not target:
-                print(f"      ⚠️ WARNING: Could not find valid F0 value column in '{sheet}'. Skipping.")
+                print(f"      ⚠️ WARNING: No valid F0 value column in '{sheet}'. Skipping.")
                 continue
 
-            print(f"      🎯 TARGET FOUND: In sheet '{sheet}', selected column '{target}'")
+            print(f"      🎯 TARGET FOUND: In '{sheet}', selected column '{target}'")
 
             # --- VALUE GUARD ---
             temp_df = pd.DataFrame({
@@ -66,12 +72,11 @@ def clean_fed_excel(excel_path, output_dir):
                 'value': pd.to_numeric(df[target], errors='coerce')
             })
 
-            # Logic: If 'value' looks like a date (e.g. 20100310), it's > 1000. 
-            # We filter those out. If the whole column is dates, the result is empty.
+            # Filter out large integers (dates like 20100310)
             temp_df = temp_df[temp_df['value'] < 1000].dropna()
 
             if temp_df.empty:
-                print(f"      ❌ REJECTED: Column '{target}' contained only dates/invalid values.")
+                print(f"      ❌ REJECTED: Column '{target}' contained only dates or invalid numbers.")
                 continue
 
             def parse_period(val):
@@ -87,28 +92,32 @@ def clean_fed_excel(excel_path, output_dir):
             final_df = temp_df.dropna(subset=['date']).groupby('date').last().reset_index()
             final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
 
+            # --- TIMESTAMP INJECTION ---
+            # Adding this column ensures you can verify data freshness inside the CSV
+            final_df['processed_at'] = timestamp_str
+
             # --- THE TOTAL TAKEOVER ---
             possible_dirs = [
-                output_dir,                     # /home/spark/data/processed
-                "/home/spark/data",             
-                "/home/spark/external_data",    
-                "/home/spark"                   
+                output_dir,
+                "/home/spark/data",
+                "/home/spark/external_data",
+                "/home/spark"
             ]
             
             for d in possible_dirs:
                 if os.path.exists(d):
+                    # We save the standard name for the engine, but log the overwrite
                     target_path = os.path.join(d, f"{var_name}.csv")
                     final_df.to_csv(target_path, index=False)
                     print(f"      🚀 OVERWROTE: {target_path}")
             
             # --- AUDIT PREVIEW ---
-            print(f"      📊 DATA PREVIEW FOR {var_name}:")
-            print(final_df.head(3).to_string(index=False))
-            print("-" * 30)
+            print(f"      📊 DATA PREVIEW FOR {var_name} (Build Time: {timestamp_str}):")
+            print(final_df.head(2).to_string(index=False))
+            print("-" * 40)
                 
         except Exception as e:
             print(f"      ❌ ERROR in sheet '{sheet}': {e}")
 
 if __name__ == "__main__":
-    # In Jenkins/Docker, we check local directory 'processed'
     clean_fed_excel('library.xlsx', './processed')
