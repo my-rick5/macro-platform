@@ -1,17 +1,15 @@
 # --- Core Math & Data ---
-numpy
+numpy<2.0.0
 pandas
 scipy
 requests
 pdfplumber
-requests
 sympy
-# cvxopt  # (If you're using it for optimization)
+openpyxl
 
 # --- CI/CD & Testing ---
 pytest
 pytest-mock
 
 # --- Infrastructure ---
-# google-cloud-storage (If you're pulling macro data from GCP)
 psutil
