@@ -6,6 +6,7 @@ requests
 pdfplumber
 sympy
 openpyxl
+pyfrbus
 
 # --- CI/CD & Testing ---
 pytest
