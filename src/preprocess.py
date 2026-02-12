@@ -1,11 +1,11 @@
 import pandas as pd
 import os
 import shutil
+import re
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #685 Direct Indexing)... ")
+    print(f"🎬 Starting Preprocessor (Build #687 Target-F0 Hunter)... ")
     
-    # 1. CLEAN SWEEP
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -16,36 +16,42 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    # MAPPING: {Sheet Name: (Variable Name, Column Index)}
-    # We use index 1 because index 0 is almost always the date.
-    config = {
-        'unemp': ('adjlegrt', 1),
-        'lur':   ('adjlegrt', 1),
-        'gdp':   ('anngr', 1),
-        'pce':   ('eco', 1)
-    }
+    mapping = {'unemp': 'adjlegrt', 'lur': 'adjlegrt', 'gdp': 'anngr', 'pce': 'eco'}
     
     for sheet in xls.sheet_names:
         s_clean = sheet.strip().lower()
-        if s_clean not in config: continue 
+        if s_clean not in mapping: continue 
             
-        var_name, col_idx = config[s_clean]
+        var_name = mapping[s_clean]
         try:
-            # We don't skiprows here so we can see the full structure
             df = pd.read_excel(xls, sheet_name=sheet)
             
-            # --- DIRECT INDEX SELECTION ---
-            # Column 0 = Dates, Column 1 = Data
-            date_col = df.iloc[:, 0]
-            data_col = df.iloc[:, col_idx]
+            # --- THE "GREENBOOK" TARGETING LOGIC ---
+            # We want 'F0' (the current quarter forecast/estimate)
+            # We explicitly EXCLUDE 'GBDATE'
+            target_col = None
+            for c in df.columns:
+                c_str = str(c).upper()
+                if 'GBDATE' in c_str: continue # Explicitly skip the junk column
+                
+                # Priority 1: Exact match for F0 (e.g., UNEMPF0)
+                if 'F0' in c_str:
+                    target_col = c
+                    break
             
-            # Convert data to numeric and drop rows where either date or data is missing
+            # Fallback: If no F0, take the first column that isn't the date
+            if not target_col:
+                target_col = df.columns[1]
+
+            print(f"   🎯 TARGETED Winner for '{sheet}': '{target_col}'")
+            
+            # Process the data
             processed_df = pd.DataFrame({
-                'date_raw': date_col,
-                var_name: pd.to_numeric(data_col, errors='coerce')
+                'date_raw': df.iloc[:, 0],
+                var_name: pd.to_numeric(df[target_col], errors='coerce')
             }).dropna()
 
-            # --- QUARTERLY DATE PARSING ---
+            # Quarterly Date Parsing
             def parse_period(val):
                 try:
                     f_val = float(val)
@@ -55,13 +61,10 @@ def clean_fed_excel(excel_path, output_dir):
                 except: return None
 
             processed_df['date'] = processed_df['date_raw'].apply(parse_period)
+            final_df = processed_df.dropna(subset=['date', var_name]).groupby('date')[var_name].last().reset_index()
             
-            # Deduplicate and Save
-            final_df = processed_df.dropna(subset=['date', var_name])
-            if not final_df.empty:
-                final_df = final_df.groupby('date')[var_name].last().reset_index()
-                final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
-                print(f"   ✅ SUCCESS: Saved {var_name}.csv from Column {col_idx}")
+            final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
+            print(f"   ✅ SUCCESS: Saved {var_name}.csv")
                 
         except Exception as e:
             print(f"   ❌ Error processing sheet '{sheet}': {e}")
