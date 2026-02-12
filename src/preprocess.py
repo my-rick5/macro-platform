@@ -1,10 +1,9 @@
 import pandas as pd
 import os
 import shutil
-import re
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #693 Absolute Anchor)... ")
+    print(f"🎬 Starting Preprocessor (Build #695 Strict Targeting)... ")
     
     # 1. CLEAN SWEEP
     if os.path.exists(output_dir):
@@ -17,47 +16,41 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
+    # EXACT HEADER MAPPING (No more guessing)
+    # Update these strings if your Excel headers use different codes
+    strict_targets = {
+        'unemp': 'UNEMPF0',
+        'lur':   'UNEMPF0',
+        'gdp':   'REALGDPF0',
+        'pce':   'PCEF0'
+    }
+    
     mapping = {'unemp': 'adjlegrt', 'lur': 'adjlegrt', 'gdp': 'anngr', 'pce': 'eco'}
     
     for sheet in xls.sheet_names:
         s_clean = sheet.strip().lower()
-        if s_clean not in mapping: continue 
+        if s_clean not in strict_targets: continue 
             
+        target_header = strict_targets[s_clean]
         var_name = mapping[s_clean]
+        
         try:
             df = pd.read_excel(xls, sheet_name=sheet)
             
-            # --- ABSOLUTE HEADER ANCHOR ---
-            target_col = None
-            
-            # Step A: Look for EXACT match for UNEMPF0
-            for c in df.columns:
-                c_str = str(c).upper().strip()
-                if c_str == 'UNEMPF0':
-                    target_col = c
-                    break
-            
-            # Step B: Strict fallback - find F0 but explicitly skip any DATE columns
-            if not target_col:
-                for c in df.columns:
-                    c_str = str(c).upper().strip()
-                    if 'F0' in c_str and 'DATE' not in c_str:
-                        target_col = c
-                        break
-            
-            if not target_col:
-                print(f"   ⚠️ WARNING: Could not find F0 anchor in '{sheet}'. Skipping.")
+            # STRICT CHECK: Does the targeted header actually exist?
+            if target_header not in df.columns:
+                print(f"   ❌ ERROR: Header '{target_header}' not found in '{sheet}'.")
+                print(f"      Available columns: {list(df.columns[:5])}...") 
                 continue
 
-            print(f"   🎯 ANCHORED Winner for '{sheet}': '{target_col}'")
+            print(f"   🎯 TARGETED: Using '{target_header}' for {var_name}")
             
-            # Process the data (Keeping it unscaled for this baseline)
             processed_df = pd.DataFrame({
                 'date_raw': df.iloc[:, 0],
-                var_name: pd.to_numeric(df[target_col], errors='coerce')
+                var_name: pd.to_numeric(df[target_header], errors='coerce')
             }).dropna()
 
-            # Quarterly Date Parsing
+            # Date Parsing
             def parse_period(val):
                 try:
                     f_val = float(val)
