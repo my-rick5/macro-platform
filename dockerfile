@@ -1,14 +1,13 @@
-# --- STAGE 1: Builder (Data Preparation) ---
-FROM debian:12-slim AS builder
+# --- STAGE 1: DataPrep (Unique Name) ---
+FROM debian:12-slim AS dataprep
 
 USER root
-# FORCE: Bypass GPG signature checks for the builder stage
+# Apply the GPG bypass and install only what is strictly needed for preprocessing
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
     apt-get update --allow-insecure-repositories || true && \
     apt-get install -y --allow-unauthenticated --no-install-recommends \
     python3 python3-pip && rm -rf /var/lib/apt/lists/*
 
-# Use break-system-packages for Debian 12 compatibility
 RUN pip3 install --break-system-packages pandas openpyxl
 
 WORKDIR /build
@@ -20,7 +19,6 @@ RUN mkdir processed && python3 preprocess.py
 FROM debian:12-slim
 
 USER root
-# FORCE: Bypass GPG signature checks for the final stage
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
     apt-get update --allow-insecure-repositories || true && \
     apt-get install -y --allow-unauthenticated --no-install-recommends \
@@ -28,15 +26,14 @@ RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";"
     libsuitesparse-dev libatlas3-base libblas3 liblapack3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install requirements directly in the final environment
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 
-# INJECT DATA: The "Bake-In" Strategy
-COPY --from=builder --chown=spark:spark /build/processed/ /home/spark/data/
-COPY --from=builder --chown=spark:spark /build/processed/ /home/spark/external_data/
+# INJECT DATA: Reference the new 'dataprep' name
+COPY --from=dataprep --chown=spark:spark /build/processed/ /home/spark/data/
+COPY --from=dataprep --chown=spark:spark /build/processed/ /home/spark/external_data/
 
 COPY --chown=spark:spark src /home/spark/src
 COPY --chown=spark:spark pyfrbus/models /home/spark/models
