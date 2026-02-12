@@ -20,22 +20,26 @@ RUN mkdir processed && python3 preprocess.py
 FROM debian:12-slim
 
 USER root
+# Added libxml2-dev and libxslt-dev for the 'lxml' dependency
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
     apt-get update --allow-insecure-repositories || true && \
     apt-get install -y --allow-unauthenticated --no-install-recommends \
     openjdk-17-jre-headless python3 python3-pip \
     libsuitesparse-dev libatlas3-base libblas3 liblapack3 \
+    libxml2-dev libxslt-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install production dependencies (Ensure 'pyfrbus' is removed from requirements.txt)
+# Install production dependencies
+# Adding lxml explicitly here to ensure it builds correctly
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt && \
+    pip3 install --no-cache-dir --break-system-packages lxml
 
 RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 
 # --- DATA & MODULE INJECTION ---
 
-# 1. Copy the local pyfrbus package (Allows: from pyfrbus import frbus)
+# 1. Copy the nested pyfrbus package (pyfrbus/pyfrbus/...)
 COPY --chown=spark:spark pyfrbus /home/spark/pyfrbus
 
 # 2. Copy the raw external data (longdata.csv)
@@ -49,12 +53,13 @@ COPY --from=dataprep --chown=spark:spark /build/processed/ /home/spark/external_
 
 # --- FINAL SETUP ---
 COPY --chown=spark:spark src /home/spark/src
+COPY --chown=spark:spark pyfrbus/models /home/spark/models
 
 RUN mkdir -p /home/spark/results && chown spark:spark /home/spark/results
 WORKDIR /home/spark
 USER spark
 
-# CRITICAL: Tell Python to look in /home/spark to find the 'pyfrbus' folder
-ENV PYTHONPATH="/home/spark"
+# CRITICAL: Path includes both root and the nested folder to handle the double-pyfrbus structure
+ENV PYTHONPATH="/home/spark:/home/spark/pyfrbus"
 
 CMD ["python3", "src/engine.py"]

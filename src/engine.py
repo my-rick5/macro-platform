@@ -3,10 +3,11 @@ import os
 import sys
 import glob
 
-# --- THE FIX: TRAVERSE THE NESTED FOLDER ---
+sys.path.append(os.path.join(os.getcwd(), "pyfrbus"))
+
 try:
     # Attempt to reach the class inside the nested folder
-    from pyfrbus.pyfrbus.frbus import Frbus
+    from pyfrbus import frbus
     print("✅ Successfully imported Frbus from nested pyfrbus.pyfrbus")
 except ImportError as e:
     print(f"❌ IMPORT ERROR: {e}")
