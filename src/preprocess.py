@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #719 Total Takeover)... ")
+    print(f"🎬 Starting Preprocessor (Build #720 - Stricter Targeting)... ")
     
     # --- ABSOLUTE WIPE ---
     try:
@@ -20,7 +20,7 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    # Whitelist of approved headers
+    # Whitelist of approved headers for the initial load
     allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0', 'LURF0']
     
     # SYNCED MAPPING: Using 'unemp' to match the Residual Header exactly
@@ -41,16 +41,24 @@ def clean_fed_excel(excel_path, output_dir):
             
             # --- PURGE NON-WHITELISTED ---
             cols_to_keep = [c for c in df.columns if str(c).upper().strip() in allowed_headers]
-            df = df[cols_to_keep]
+            # If no whitelist hits, keep all columns to avoid empty DF, but we will filter next
+            if cols_to_keep:
+                df = df[cols_to_keep]
 
-            # Identify target Nowcast
+            # --- STRICTER TARGET SELECTION ---
+            # We need the column with 'F0' that is NOT a Date or ID
             target = None
             for col in df.columns:
-                if 'F0' in str(col).upper():
+                c_upper = str(col).upper().strip()
+                if 'F0' in c_upper and all(x not in c_upper for x in ['DATE', 'PERIOD', 'STAMP']):
                     target = col
                     break
 
-            if not target: continue
+            if not target:
+                print(f"      ⚠️ WARNING: Could not find valid F0 value column in '{sheet}'. Skipping.")
+                continue
+
+            print(f"      🎯 TARGET FOUND: In sheet '{sheet}', selected column '{target}'")
 
             # --- VALUE GUARD ---
             temp_df = pd.DataFrame({
@@ -58,8 +66,13 @@ def clean_fed_excel(excel_path, output_dir):
                 'value': pd.to_numeric(df[target], errors='coerce')
             })
 
-            # Filter out YYYYMMDD date stamps (> 1000)
+            # Logic: If 'value' looks like a date (e.g. 20100310), it's > 1000. 
+            # We filter those out. If the whole column is dates, the result is empty.
             temp_df = temp_df[temp_df['value'] < 1000].dropna()
+
+            if temp_df.empty:
+                print(f"      ❌ REJECTED: Column '{target}' contained only dates/invalid values.")
+                continue
 
             def parse_period(val):
                 try:
@@ -75,12 +88,11 @@ def clean_fed_excel(excel_path, output_dir):
             final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
 
             # --- THE TOTAL TAKEOVER ---
-            # We save to every directory seen in the Dockerfile/Logs to ensure the engine sees it
             possible_dirs = [
                 output_dir,                     # /home/spark/data/processed
-                "/home/spark/data",             # Parent data dir
-                "/home/spark/external_data",    # Dir from Docker Step 20
-                "/home/spark"                   # Root app dir
+                "/home/spark/data",             
+                "/home/spark/external_data",    
+                "/home/spark"                   
             ]
             
             for d in possible_dirs:
@@ -91,12 +103,12 @@ def clean_fed_excel(excel_path, output_dir):
             
             # --- AUDIT PREVIEW ---
             print(f"      📊 DATA PREVIEW FOR {var_name}:")
-            print(final_df.head(5).to_string(index=False))
+            print(final_df.head(3).to_string(index=False))
             print("-" * 30)
                 
         except Exception as e:
             print(f"      ❌ ERROR in sheet '{sheet}': {e}")
 
 if __name__ == "__main__":
-    # Use the builder's local path, not the spark home path
+    # In Jenkins/Docker, we check local directory 'processed'
     clean_fed_excel('library.xlsx', './processed')
