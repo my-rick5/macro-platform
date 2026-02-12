@@ -3,7 +3,7 @@ import os
 import shutil
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #714 Value Guard)... ")
+    print(f"🎬 Starting Preprocessor (Build #715 Audit Preview)... ")
     
     # --- AGGRESSIVE WIPE ---
     try:
@@ -21,7 +21,6 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    # Whitelist of approved headers
     allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0', 'LURF0']
     mapping = {'unemp': 'labor_series', 'gdp': 'gdp_series', 'pce': 'pce_anchor'}
     
@@ -37,7 +36,6 @@ def clean_fed_excel(excel_path, output_dir):
             cols_to_keep = [c for c in df.columns if str(c).upper().strip() in allowed_headers]
             df = df[cols_to_keep]
 
-            # Identify target Nowcast
             target = None
             for col in df.columns:
                 if 'F0' in str(col).upper():
@@ -46,15 +44,13 @@ def clean_fed_excel(excel_path, output_dir):
 
             if not target: continue
 
-            # --- STANDARDIZATION & VALUE GUARD ---
+            # --- VALUE GUARD ---
             temp_df = pd.DataFrame({
                 'raw_date': df.iloc[:, 0],
                 'value': pd.to_numeric(df[target], errors='coerce')
             })
 
-            # THE VALUE GUARD: 
-            # If the value is > 1000, it's a YYYYMMDD date stamp, not a percentage.
-            # We filter for values < 1000 to ensure only economic data survives.
+            # Filter out YYYYMMDD dates (anything > 1000)
             temp_df = temp_df[temp_df['value'] < 1000].dropna()
 
             def parse_period(val):
@@ -67,13 +63,19 @@ def clean_fed_excel(excel_path, output_dir):
 
             temp_df['date'] = temp_df['raw_date'].apply(parse_period)
             
-            # Take the LAST vintage for each quarter
             final_df = temp_df.dropna(subset=['date']).groupby('date').last().reset_index()
             final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
 
             # Save clean file
-            final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
+            out_file = os.path.join(output_dir, f"{var_name}.csv")
+            final_df.to_csv(out_file, index=False)
+            
+            # --- THE AUDIT PREVIEW ---
             print(f"      ✅ SUCCESS: Saved {var_name}.csv")
+            print(f"      📊 DATA PREVIEW (First 5 Rows):")
+            # This will show up in the Jenkins Console Output
+            print(final_df.head(5).to_string(index=False))
+            print("-" * 30)
                 
         except Exception as e:
             print(f"      ❌ ERROR in sheet '{sheet}': {e}")
