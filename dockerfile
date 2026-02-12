@@ -9,7 +9,6 @@ COPY external_data/longdata.csv ./external_data/longdata.csv
 
 # Copy only the files that change frequently
 COPY src/ ./src/
-COPY library.xlsx .
 COPY models/ ./models/
 
 # The command to run your diagnostic engine
