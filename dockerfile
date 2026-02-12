@@ -21,7 +21,7 @@ RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";"
     apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless python3 python3-pip python3-dev \
     # Key Fix: Install the pre-compiled Debian scikit-umfpack
-    python3-numpy python3-scipy python3-scikits.umfpack \
+    python3-numpy python3-scipy python3-scikits-umfpack \
     # System dependencies for other potential builds
     libsuitesparse-dev libatlas-base-dev \
     libxml2-dev libxslt-dev libgmp-dev libmpfr-dev libmpc-dev \
