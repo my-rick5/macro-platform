@@ -13,13 +13,19 @@ RUN mkdir processed && python3 preprocess.py
 FROM debian:11-slim
 USER root
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
+    # Add 'contrib' and 'non-free' to the sources
+    sed -i 's/main/main contrib non-free/g' /etc/apt/sources.list && \
     apt-get update || true && \
+    # Install dependency logic
     apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless python3 python3-pip \
     libsuitesparse-dev libatlas3-base libblas3 liblapack3 \
     libxml2-dev libxslt-dev \
-    libsymengine-dev \
-    && rm -rf /var/lib/apt/lists/*
+    # If libsymengine-dev still fails, we install its core dependencies instead
+    libgmp-dev libmpfr-dev libmpc-dev || true && \
+    # Final attempt at the dev package
+    apt-get install -y libsymengine-dev || echo "⚠️ Warning: libsymengine-dev not found, proceeding to pip-only install" && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies + symengine
 COPY requirements.txt .
