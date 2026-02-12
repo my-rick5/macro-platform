@@ -31,10 +31,11 @@ RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";"
 # 2. Python dependency installation
 COPY requirements.txt .
 
+RUN pip3 install --no-cache-dir --no-build-isolation "scikit-umfpack==0.3.3"
+
 # We must install numpy/scipy FIRST so scikit-umfpack can find them during its build
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir "numpy<2.0.0" "scipy<1.14.0" && \
-    pip3 install --no-cache-dir "scikit-umfpack==0.3.3" && \
     pip3 install --no-cache-dir -r requirements.txt && \
     pip3 install --no-cache-dir lxml symengine networkx
 
