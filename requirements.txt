@@ -4,6 +4,7 @@ requests
 pdfplumber
 sympy
 openpyxl
+lxml
 
 # --- CI/CD & Testing ---
 pytest

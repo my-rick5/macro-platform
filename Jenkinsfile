@@ -21,7 +21,7 @@ pipeline {
                     if (params.REBUILD_BASE || baseExists == "") {
                         echo "🚀 Building/Refreshing Base Image (This takes ~3 mins)..."
                         // Ensure Dockerfile.base is in your root directory
-                        sh "docker build -t ${BASE_IMAGE} -f Dockerfile.base ."
+                        sh "docker build --no-cache -t ${BASE_IMAGE} -f Dockerfile.base ."
                     } else {
                         echo "✅ Base image found. Skipping heavy install stage."
                     }
