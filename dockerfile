@@ -31,7 +31,7 @@ COPY requirements.txt .
 # FIX: Install NumPy/SciPy first, then build scikit-umfpack without isolation.
 # This ensures the build script sees the NumPy we just installed.
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
-    python3 -m pip install --no-cache-dir "numpy<2.0.0" "scipy<1.14.0" && \
+    python3 -m pip install --no-cache-dir "numpy>=1.19,<1.24" "scipy<1.11.0" && \
     python3 -m pip install --no-cache-dir --no-build-isolation "scikit-umfpack==0.3.3" && \
     python3 -m pip install --no-cache-dir -r requirements.txt && \
     python3 -m pip install --no-cache-dir lxml symengine networkx
