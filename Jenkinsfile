@@ -21,8 +21,11 @@ pipeline {
 
         stage('Build & Bake Data') {
             steps {
-                // Ensure we use the 'dataprep' naming in the Dockerfile
-                sh "docker build --no-cache -t ${IMAGE_NAME} ."
+                sh """
+                    echo "📂 Current Directory Content:"
+                    ls -R
+                    docker build --no-cache -t ${IMAGE_NAME} .
+                """
             }
         }
 
