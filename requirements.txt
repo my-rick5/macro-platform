@@ -6,7 +6,7 @@ sympy
 openpyxl
 lxml
 symengine
-scipi
+scipy
 
 # --- CI/CD & Testing ---
 pytest
