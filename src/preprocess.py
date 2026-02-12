@@ -3,7 +3,7 @@ import os
 import shutil
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #695 Strict Targeting)... ")
+    print(f"🎬 Starting Preprocessor (Build #700 Strict Exclusion)... ")
     
     # 1. CLEAN SWEEP
     if os.path.exists(output_dir):
@@ -16,15 +16,13 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    # EXACT HEADER MAPPING (No more guessing)
-    # Update these strings if your Excel headers use different codes
+    # Map variables to their specific Greenbook headers
     strict_targets = {
         'unemp': 'UNEMPF0',
         'lur':   'UNEMPF0',
         'gdp':   'REALGDPF0',
         'pce':   'PCEF0'
     }
-    
     mapping = {'unemp': 'adjlegrt', 'lur': 'adjlegrt', 'gdp': 'anngr', 'pce': 'eco'}
     
     for sheet in xls.sheet_names:
@@ -36,34 +34,40 @@ def clean_fed_excel(excel_path, output_dir):
         
         try:
             df = pd.read_excel(xls, sheet_name=sheet)
-            
-            # STRICT CHECK: Does the targeted header actually exist?
+
+            # --- THE GBDATE PURGE ---
+            # Drop any column that contains 'GBdate' (case-insensitive)
+            cols_to_drop = [c for c in df.columns if 'gbdate' in str(c).lower()]
+            if cols_to_drop:
+                df.drop(columns=cols_to_drop, inplace=True)
+                print(f"   🗑️ Purged metadata columns: {cols_to_drop}")
+
             if target_header not in df.columns:
-                print(f"   ❌ ERROR: Header '{target_header}' not found in '{sheet}'.")
-                print(f"      Available columns: {list(df.columns[:5])}...") 
+                print(f"   ⚠️ Skipping '{sheet}': Header '{target_header}' not found.")
                 continue
 
-            print(f"   🎯 TARGETED: Using '{target_header}' for {var_name}")
-            
-            processed_df = pd.DataFrame({
-                'date_raw': df.iloc[:, 0],
-                var_name: pd.to_numeric(df[target_header], errors='coerce')
+            # --- DEDUPLICATION ---
+            temp_df = pd.DataFrame({
+                'raw_date': df.iloc[:, 0],
+                'value': pd.to_numeric(df[target_header], errors='coerce')
             }).dropna()
 
-            # Date Parsing
             def parse_period(val):
                 try:
                     f_val = float(val)
                     year, rem = int(f_val), f_val - int(f_val)
-                    q = 1 if rem < 0.1 else 2 if rem < 0.3 else 3 if rem < 0.6 else 4
+                    q = 1 if rem < 0.15 else 2 if rem < 0.4 else 3 if rem < 0.65 else 4
                     return f"{year}Q{q}"
                 except: return None
 
-            processed_df['date'] = processed_df['date_raw'].apply(parse_period)
-            final_df = processed_df.dropna(subset=['date', var_name]).groupby('date')[var_name].last().reset_index()
+            temp_df['date'] = temp_df['raw_date'].apply(parse_period)
             
+            # Collapsing multiple vintages to the last (most recent) entry
+            final_df = temp_df.dropna(subset=['date']).groupby('date').last().reset_index()
+            final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
+
             final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
-            print(f"   ✅ SUCCESS: Saved {var_name}.csv")
+            print(f"   ✅ SUCCESS: Saved {var_name}.csv using {target_header}")
                 
         except Exception as e:
             print(f"   ❌ Error processing sheet '{sheet}': {e}")
