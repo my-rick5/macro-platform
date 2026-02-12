@@ -71,7 +71,7 @@ def run_pro_engine():
         
     start, end = common.min(), common.max()
     
-    from pyfrbus import frbus
+    from pyfrbus.pyfrbus import frbus
     model_path = os.path.join(working_dir, "models/model.xml")
     if not os.path.exists(model_path):
         print(f"❌ FATAL: Model file missing at {model_path}")
