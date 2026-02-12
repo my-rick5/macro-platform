@@ -3,27 +3,17 @@ import os
 import shutil
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #710 Host-Check)... ")
+    print(f"🎬 Starting Preprocessor (Build #714 Value Guard)... ")
     
-    # --- PARENT AUDIT ---
-    # We check the parent to see if ghost files (import.csv, etc.) are hiding one level up
-    parent_dir = os.path.dirname(output_dir)
-    try:
-        if os.path.exists(parent_dir):
-            print(f"   📂 Parent Directory Audit ({parent_dir}):")
-            print(f"      Contents: {os.listdir(parent_dir)}")
-    except Exception as e:
-        print(f"   ⚠️ Parent Audit Failed: {e}")
-
     # --- AGGRESSIVE WIPE ---
-    # Using shell to force-delete the directory and recreate it fresh
     try:
-        os.system(f"rm -rf {output_dir} && mkdir -p {output_dir}")
-        remaining = os.listdir(output_dir) if os.path.exists(output_dir) else []
-        print(f"   💥 CLEANED & RECREATED: {output_dir}")
-        print(f"   🧹 Post-Wipe Check: {len(remaining)} files remain in target.")
+        if os.path.exists(output_dir):
+            os.system(f"rm -rf {output_dir}/*")
+            print(f"   💥 OS-LEVEL WIPE: {output_dir} cleared.")
+        else:
+            os.makedirs(output_dir, exist_ok=True)
     except Exception as e:
-        print(f"   ⚠️ Force-Wipe Failed: {e}")
+        print(f"   ⚠️ Wipe failed: {e}")
 
     try:
         xls = pd.ExcelFile(excel_path)
@@ -33,14 +23,7 @@ def clean_fed_excel(excel_path, output_dir):
 
     # Whitelist of approved headers
     allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0', 'LURF0']
-    
-    # Mapping to engine-specific filenames
-    mapping = {
-        'unemp': 'labor_series', 
-        'lur':   'labor_series', 
-        'gdp':   'gdp_series', 
-        'pce':   'pce_anchor'
-    }
+    mapping = {'unemp': 'labor_series', 'gdp': 'gdp_series', 'pce': 'pce_anchor'}
     
     for sheet in xls.sheet_names:
         s_clean = sheet.strip().lower()
@@ -50,8 +33,7 @@ def clean_fed_excel(excel_path, output_dir):
         try:
             df = pd.read_excel(xls, sheet_name=sheet)
             
-            # --- PURGE NON-WHITELISTED ---
-            # This kills GBdate, UNEMPB1, etc.
+            # --- NUCLEAR PURGE ---
             cols_to_keep = [c for c in df.columns if str(c).upper().strip() in allowed_headers]
             df = df[cols_to_keep]
 
@@ -62,14 +44,18 @@ def clean_fed_excel(excel_path, output_dir):
                     target = col
                     break
 
-            if not target:
-                continue
+            if not target: continue
 
-            # --- STANDARDIZE & DEDUPLICATE ---
+            # --- STANDARDIZATION & VALUE GUARD ---
             temp_df = pd.DataFrame({
                 'raw_date': df.iloc[:, 0],
                 'value': pd.to_numeric(df[target], errors='coerce')
-            }).dropna()
+            })
+
+            # THE VALUE GUARD: 
+            # If the value is > 1000, it's a YYYYMMDD date stamp, not a percentage.
+            # We filter for values < 1000 to ensure only economic data survives.
+            temp_df = temp_df[temp_df['value'] < 1000].dropna()
 
             def parse_period(val):
                 try:
@@ -81,14 +67,13 @@ def clean_fed_excel(excel_path, output_dir):
 
             temp_df['date'] = temp_df['raw_date'].apply(parse_period)
             
-            # Group by the Quarter and take the last row (latest vintage)
+            # Take the LAST vintage for each quarter
             final_df = temp_df.dropna(subset=['date']).groupby('date').last().reset_index()
             final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
 
             # Save clean file
-            out_path = os.path.join(output_dir, f"{var_name}.csv")
-            final_df.to_csv(out_path, index=False)
-            print(f"      ✅ SUCCESS: Saved {var_name}.csv to {out_path}")
+            final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
+            print(f"      ✅ SUCCESS: Saved {var_name}.csv")
                 
         except Exception as e:
             print(f"      ❌ ERROR in sheet '{sheet}': {e}")
