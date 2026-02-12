@@ -2,14 +2,28 @@ pipeline {
     agent any
 
     environment {
-        // Unique image name based on build number to prevent cache collisions
         IMAGE_NAME = "macro-engine:${env.BUILD_NUMBER}"
     }
 
     stages {
+        stage('Pre-Flight Cleanup') {
+            steps {
+                script {
+                    echo "🧹 Clearing old Docker junk to free up space..."
+                    // This clears unused containers, networks, and images
+                    // '|| true' ensures the build doesn't fail if there's nothing to clean
+                    sh "docker system prune -f || true"
+                    sh "docker builder prune -f || true"
+                    
+                    echo "📊 Checking available disk space..."
+                    sh "df -h /var/lib/docker || df -h /"
+                }
+            }
+        }
+
         stage('Build & Bake Data') {
             steps {
-                // The Dockerfile now runs preprocess.py automatically during this step
+                // Building the image now handles the Preprocessor bake-in
                 sh "docker build -t ${IMAGE_NAME} ."
             }
         }
@@ -18,28 +32,26 @@ pipeline {
             steps {
                 sh """
                     mkdir -p results
+                    
+                    # Start container (runs the internal CMD: python3 src/engine.py)
                     docker run -d --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
                     
-                    echo "⏳ Waiting for Engine to solve..."
+                    echo "⏳ Waiting for Engine to solve quarters..."
                     sleep 30
                     
-                    echo "📊 --- ENGINE CONSOLE OUTPUT ---"
+                    echo "📊 --- ENGINE LOGS ---"
                     docker logs engine-${env.BUILD_NUMBER}
-                    echo "-------------------------------"
                     
+                    # Grab the results
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
                 """
             }
         }
     }
 
-
     post {
         always {
-            // Clean up the container but keep the results
             sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
-            
-            // Archive the residuals for your review
             archiveArtifacts artifacts: 'results/*.csv', allowEmptyArchive: true
         }
     }
