@@ -13,3 +13,4 @@ pytest-mock
 
 # --- Infrastructure ---
 psutil
+networkx
