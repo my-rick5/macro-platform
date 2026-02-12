@@ -20,7 +20,7 @@ RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";"
     apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless python3 python3-pip python3-dev \
     # Critical for pyfrbus/scikit-umfpack
-    swig \
+    swig pkg-config cmake\
     libsuitesparse-dev libatlas-base-dev libblas-dev liblapack-dev \
     libxml2-dev libxslt-dev \
     libgmp-dev libmpfr-dev libmpc-dev \
