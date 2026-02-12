@@ -1,8 +1,8 @@
-# --- STAGE 1: DataPrep (Unique Name) ---
+# --- STAGE 1: DataPrep ---
 FROM debian:12-slim AS dataprep
 
 USER root
-# Apply the GPG bypass and install only what is strictly needed for preprocessing
+# Apply GPG bypass for corporate proxy/network issues
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
     apt-get update --allow-insecure-repositories || true && \
     apt-get install -y --allow-unauthenticated --no-install-recommends \
@@ -26,15 +26,20 @@ RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";"
     libsuitesparse-dev libatlas3-base libblas3 liblapack3 \
     && rm -rf /var/lib/apt/lists/*
 
+# Install python dependencies
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 
-# INJECT DATA: Reference the new 'dataprep' name
-COPY --from=dataprep --chown=spark:spark /build/processed/ /home/spark/data/
+# 1. First, copy the entire external_data folder (contains longdata.csv)
+COPY --chown=spark:spark external_data /home/spark/external_data
+
+# 2. Then, inject ONLY the baked files from the builder into that same folder
+# This prevents overwriting the whole directory and keeps longdata.csv safe
 COPY --from=dataprep --chown=spark:spark /build/processed/ /home/spark/external_data/
 
+# Copy remaining logic
 COPY --chown=spark:spark src /home/spark/src
 COPY --chown=spark:spark pyfrbus/models /home/spark/models
 
