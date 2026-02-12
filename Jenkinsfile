@@ -17,18 +17,17 @@ pipeline {
         stage('Run Engine') {
             steps {
                 sh """
-                    # Start the container
+                    # Start the container and let it run its own CMD
                     docker run -d --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
                     
-                    # Execute the engine (which now finds the pre-cleaned CSVs)
-                    docker exec engine-${env.BUILD_NUMBER} python3 src/engine.py
+                    # Wait for the engine to finish solving (it takes about 10-15 seconds)
+                    sleep 30
                     
-                    # Pull results back to Jenkins workspace
+                    # Pull the results
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
                 """
             }
         }
-    }
 
     post {
         always {

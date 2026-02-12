@@ -98,4 +98,5 @@ def clean_fed_excel(excel_path, output_dir):
             print(f"      ❌ ERROR in sheet '{sheet}': {e}")
 
 if __name__ == "__main__":
-    clean_fed_excel('/home/spark/data/library.xlsx', '/home/spark/data/processed')
+    # Use the builder's local path, not the spark home path
+    clean_fed_excel('library.xlsx', './processed')
