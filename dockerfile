@@ -8,14 +8,13 @@ COPY src/preprocess.py .
 COPY data/library.xlsx .
 RUN mkdir processed && python3 preprocess.py
 
-# --- STAGE 2: Builder ---
+# --- STAGE 2: Builder (Compilation Stage) ---
 FROM debian:11-slim AS builder
 USER root
 ENV DEBIAN_FRONTEND=noninteractive \
     DEB_PYTHON_INSTALL_LAYOUT=standard \
     PATH="/root/.local/bin:${PATH}"
 
-# Removed libsymengine-dev, added cmake
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     swig libsuitesparse-dev libatlas-base-dev libblas-dev liblapack-dev \
@@ -35,10 +34,10 @@ RUN pip3 install --upgrade pip && \
 RUN CFLAGS="-I/usr/include/suitesparse" \
     pip3 install scikit-umfpack==0.4.1 --user --no-build-isolation
 
-# 3. Build C-extensions (lxml, symengine)
-# cmake being installed above allows symengine to compile now
+# 3. Build complex C-extensions and model dependencies
+# Added 'multiprocess' here to solve Build #802
 COPY requirements.txt .
-RUN pip3 install --user lxml symengine networkx && \
+RUN pip3 install --user lxml symengine networkx multiprocess && \
     pip3 install --user -r requirements.txt
 
 # --- STAGE 3: Final Runtime ---
@@ -47,7 +46,6 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install shared runtime libraries
-# Removed libsymengine0.7 (pip will provide the static/shared libs in .local)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless python3 python3-pip \
     libsuitesparse-dev libatlas3-base libblas3 liblapack3 \
@@ -58,7 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Setup application user
 RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 
-# Copy ALL compiled Python packages from Builder
+# Copy compiled Python packages from Builder
 COPY --from=builder /root/.local /home/spark/.local
 
 # Inject code, models, and data
@@ -77,7 +75,7 @@ USER spark
 ENV PYTHONPATH="/home/spark/.local/lib/python3.9/site-packages:/home/spark" \
     PATH="/home/spark/.local/bin:${PATH}"
 
-# Verification check
-RUN python3 -c "import symengine; import scikits.umfpack; import lxml; print('✅ All core modules loaded.')"
+# Multi-module Verification Check
+RUN python3 -c "import symengine; import scikits.umfpack; import lxml; import multiprocess; print('✅ All core modules loaded.')"
 
 CMD ["python3", "src/engine.py"]
