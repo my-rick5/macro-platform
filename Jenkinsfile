@@ -22,9 +22,12 @@ pipeline {
         stage('Build & Bake Data') {
             steps {
                 sh """
-                    echo "🚀 Starting Build #746..."
-                    # Adding --progress=plain helps see exactly where it fails in Jenkins
-                    docker build --no-cache --progress=plain -t ${IMAGE_NAME} .
+                    echo "📂 Verifying context before build..."
+                    ls -d data/library.xlsx external_data/longdata.csv
+                    
+                    echo "🚀 Starting Build #748 (Legacy Mode)..."
+                    # Removed --progress=plain for compatibility
+                    docker build --no-cache -t ${IMAGE_NAME} .
                 """
             }
         }
