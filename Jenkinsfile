@@ -1,40 +1,42 @@
 pipeline {
     agent any
+
+    environment {
+        // Unique image name based on build number to prevent cache collisions
+        IMAGE_NAME = "macro-engine:${env.BUILD_NUMBER}"
+    }
+
     stages {
-        stage('Initialize') {
+        stage('Build & Bake Data') {
             steps {
-                sh "mkdir -p results data/processed"
+                // The Dockerfile now runs preprocess.py automatically during this step
+                sh "docker build -t ${IMAGE_NAME} ."
             }
         }
-        stage('Run Calibration') {
+
+        stage('Run Engine') {
             steps {
-                script {
-                    sh "docker build -t macro-engine-image:${env.BUILD_NUMBER} ."
-                    sh "docker run -d --name engine-${env.BUILD_NUMBER} macro-engine-image:${env.BUILD_NUMBER} sleep 600"
-                    try {
-                        echo "🔍 Step 1: Preprocessing Excel..."
-                        sh "docker exec engine-${env.BUILD_NUMBER} python3 src/preprocess.py"
-                        
-                        echo "🚀 Step 2: Running Engine & Scanning for PCE..."
-                        // We use a simple sh here; the Python 'print' statements 
-                        // will show up in the Jenkins Console Output.
-                        sh "docker exec engine-${env.BUILD_NUMBER} python3 src/engine.py"
-                        
-                        sh "docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/"
-                    } finally {
-                        sh "docker rm -f engine-${env.BUILD_NUMBER}"
-                    }
-                }
+                sh """
+                    # Start the container
+                    docker run -d --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
+                    
+                    # Execute the engine (which now finds the pre-cleaned CSVs)
+                    docker exec engine-${env.BUILD_NUMBER} python3 src/engine.py
+                    
+                    # Pull results back to Jenkins workspace
+                    docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
+                """
             }
         }
     }
+
     post {
         always {
-            // This ensures we always save whatever residuals were made
+            // Clean up the container but keep the results
+            sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
+            
+            // Archive the residuals for your review
             archiveArtifacts artifacts: 'results/*.csv', allowEmptyArchive: true
-        }
-        failure {
-            echo "❌ BUILD FAILED: Check the 'Console Output' above to see the Column List for PCE identification."
         }
     }
 }
