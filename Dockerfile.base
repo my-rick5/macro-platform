@@ -1,0 +1,23 @@
+# Use a slim Python image to keep the footprint small
+FROM python:3.9-slim-debian
+
+# Install system-level dependencies for C-extensions
+RUN apt-get update && apt-get install -y \
+    libxml2-dev \
+    libxslt-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /home/spark
+
+# Install Python packages (this is the slowest part of your current build)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the FRB/US library itself into the base image
+# Since this library rarely changes, it belongs here.
+COPY pyfrbus/ ./pyfrbus/
+
+# Set environment variables for the solver
+ENV PYTHONPATH="/home/spark/pyfrbus:/home/spark"
+ENV SPARK_HOME="/home/spark"

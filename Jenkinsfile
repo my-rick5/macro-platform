@@ -1,64 +1,65 @@
 pipeline {
     agent any
 
+    parameters {
+        booleanParam(name: 'REBUILD_BASE', defaultValue: false, description: 'Check this to force a rebuild of the macro-engine-base image.')
+    }
+    
     environment {
-        IMAGE_NAME = "macro-engine:${env.BUILD_NUMBER}"
+        BASE_IMAGE = "macro-engine-base:latest"
+        APP_IMAGE  = "macro-engine-app:${env.BUILD_NUMBER}"
+        SPARK_HOME = "/home/spark"
     }
 
     stages {
-        stage('Smart Cleanup') {
+        stage('🛠️ Setup Base Image') {
             steps {
                 script {
-                    env.START_TIME = System.currentTimeMillis()
-                    echo "🧹 SMART CLEANUP: Pruning dangling objects..."
-                    sh "docker container prune -f"
-                    sh "docker image prune -f"
+                    // Check if image exists locally
+                    def baseExists = sh(script: "docker images -q ${BASE_IMAGE}", returnStdout: true).trim()
+                    
+                    if (params.REBUILD_BASE || baseExists == "") {
+                        echo "🚀 Building/Refreshing Base Image (This takes ~3 mins)..."
+                        // Ensure Dockerfile.base is in your root directory
+                        sh "docker build -t ${BASE_IMAGE} -f Dockerfile.base ."
+                    } else {
+                        echo "✅ Base image found. Skipping heavy install stage."
+                    }
                 }
             }
         }
 
-        stage('Build & Bake Data') {
+        stage('📦 Build App') {
             steps {
-                script {
-                    def buildStart = System.currentTimeMillis()
-                    sh "docker build -t ${IMAGE_NAME} ."
-                    def buildEnd = System.currentTimeMillis()
-                    env.BUILD_TIME = "${((buildEnd - buildStart) / 1000).toString()}s"
-                }
+                echo "⚡ Building App Layer (This should take < 10s)..."
+                // This builds your local Dockerfile which starts 'FROM macro-engine-base:latest'
+                sh "docker build -t ${APP_IMAGE} ."
             }
         }
 
-        stage('Run Engine') {
+        stage('🧪 Run Engine') {
             steps {
-                sh """
-                    mkdir -p results debug_data
-                    docker run --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
-                    docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
-                    docker cp engine-${env.BUILD_NUMBER}:/home/spark/external_data/. ./debug_data/
-                """
+                // We run the container and give it a name based on the build number for easy cleanup
+                sh "docker run --name engine-${env.BUILD_NUMBER} ${APP_IMAGE}"
+            }
+            post {
+                always {
+                    echo "📥 Extracting Results and Diagnostics..."
+                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.SPARK_HOME}/results/. ./results/ || true"
+                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.SPARK_HOME}/external_data/. ./debug_data/ || true"
+                    sh "docker rm engine-${env.BUILD_NUMBER}"
+                }
             }
         }
     }
 
     post {
-        always {
-            script {
-                // Calculate Total Duration
-                def totalTimeMs = System.currentTimeMillis() - env.START_TIME.toLong()
-                def durationMin = (totalTimeMs / 1000) / 60
-                def summary = "Build: ${env.BUILD_TIME} | Total: ${String.format('%.2f', durationMin)}m"
-                
-                // This puts the timing info directly on the Jenkins Build History sidebar
-                currentBuild.description = summary
-                
-                echo "--------------------------------------------------"
-                echo "🏁 FINAL STATS: ${summary}"
-                echo "--------------------------------------------------"
-
-                sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
-                archiveArtifacts artifacts: 'results/*.csv, debug_data/*.csv', allowEmptyArchive: true
-                sh "docker rmi ${IMAGE_NAME} || true"
-            }
+        success {
+            archiveArtifacts artifacts: 'results/*.csv, debug_data/*.csv', fingerprint: true
+            echo "🏁 Calibration Complete. Check Artifacts for residuals."
+        }
+        failure {
+            echo "❌ Build Failed. Check the 'Run Engine' logs for solver errors."
         }
     }
 }
