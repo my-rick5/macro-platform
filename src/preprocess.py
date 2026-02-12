@@ -4,8 +4,9 @@ import shutil
 import re
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #687 Target-F0 Hunter)... ")
+    print(f"🎬 Starting Preprocessor (Build #689 Auto-Scaler)... ")
     
+    # 1. CLEAN SWEEP
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -26,29 +27,34 @@ def clean_fed_excel(excel_path, output_dir):
         try:
             df = pd.read_excel(xls, sheet_name=sheet)
             
-            # --- THE "GREENBOOK" TARGETING LOGIC ---
-            # We want 'F0' (the current quarter forecast/estimate)
-            # We explicitly EXCLUDE 'GBDATE'
+            # --- TARGET F0 (NOWCAST) ---
             target_col = None
             for c in df.columns:
                 c_str = str(c).upper()
-                if 'GBDATE' in c_str: continue # Explicitly skip the junk column
-                
-                # Priority 1: Exact match for F0 (e.g., UNEMPF0)
+                if 'GBDATE' in c_str: continue 
                 if 'F0' in c_str:
                     target_col = c
                     break
             
-            # Fallback: If no F0, take the first column that isn't the date
             if not target_col:
                 target_col = df.columns[1]
 
-            print(f"   🎯 TARGETED Winner for '{sheet}': '{target_col}'")
+            # --- AUTO-SCALER LOGIC ---
+            raw_series = pd.to_numeric(df[target_col], errors='coerce')
             
-            # Process the data
+            # Check if data is in % (e.g. 5.0) vs fraction (e.g. 0.05)
+            # Threshold of 1.0 is standard for macro series like Unemployment
+            if raw_series.mean() > 1.0:
+                print(f"   ⚖️ Scaling '{target_col}' down (/100) to fractional format.")
+                final_series = raw_series / 100
+            else:
+                final_series = raw_series
+
+            print(f"   🎯 FINAL Winner for '{sheet}': '{target_col}'")
+            
             processed_df = pd.DataFrame({
                 'date_raw': df.iloc[:, 0],
-                var_name: pd.to_numeric(df[target_col], errors='coerce')
+                var_name: final_series
             }).dropna()
 
             # Quarterly Date Parsing
