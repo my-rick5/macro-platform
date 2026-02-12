@@ -1,5 +1,5 @@
 # Use a slim Python image to keep the footprint small
-FROM python:3.9-slim-debian
+FROM python:3.9-slim
 
 # Install system-level dependencies for C-extensions
 RUN apt-get update && apt-get install -y \
