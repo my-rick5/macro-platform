@@ -3,10 +3,13 @@ import os
 import shutil
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #701 Nuclear Option)... ")
+    print(f"🎬 Starting Preprocessor (Build #703 Strict Isolation)... ")
     
+    # --- THE COMPULSORY WIPE ---
+    # This ensures no 'import' or 'export' ghosts from Build #690 remain.
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
+        print(f"   🧹 Cleared old artifacts from {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
     
     try:
@@ -15,9 +18,16 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    # THE WHITE LIST: Only these headers are allowed to exist
-    allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0', 'LURF0']
-    mapping = {'unemp': 'adjlegrt', 'lur': 'adjlegrt', 'gdp': 'anngr', 'pce': 'eco'}
+    # Use unique, engine-specific filenames to avoid auto-concatenation errors
+    mapping = {
+        'unemp': 'labor_series', 
+        'lur':   'labor_series', 
+        'gdp':   'gdp_series', 
+        'pce':   'pce_anchor'
+    }
+    
+    # White-list only the headers we explicitly want to allow
+    allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0']
     
     for sheet in xls.sheet_names:
         s_clean = sheet.strip().lower()
@@ -27,30 +37,23 @@ def clean_fed_excel(excel_path, output_dir):
         try:
             df = pd.read_excel(xls, sheet_name=sheet)
 
-            # --- THE NUCLEAR PURGE ---
-            # Drop every column that is not in our White List
+            # Purge any column not in our strict white-list
             cols_to_keep = [c for c in df.columns if str(c).upper().strip() in allowed_headers]
-            cols_to_kill = [c for c in df.columns if c not in cols_to_keep]
-            
             df = df[cols_to_keep]
-            print(f"   ☢️ Purged unknown columns: {cols_to_kill}")
 
-            # Re-identify our target now that the junk is gone
-            target_header = None
-            possible_targets = ['UNEMPF0', 'LURF0', 'REALGDPF0', 'PCEF0']
-            for t in possible_targets:
-                if t in df.columns:
-                    target_header = t
+            # Identify the specific column for this sheet
+            target = None
+            for col in df.columns:
+                if 'F0' in str(col).upper():
+                    target = col
                     break
 
-            if not target_header:
-                print(f"   ⚠️ Skipping '{sheet}': No white-listed target found.")
-                continue
+            if not target: continue
 
-            # --- DEDUPLICATION ---
+            # Standardize dates and values
             temp_df = pd.DataFrame({
                 'raw_date': df.iloc[:, 0],
-                'value': pd.to_numeric(df[target_header], errors='coerce')
+                'value': pd.to_numeric(df[target], errors='coerce')
             }).dropna()
 
             def parse_period(val):
@@ -63,12 +66,12 @@ def clean_fed_excel(excel_path, output_dir):
 
             temp_df['date'] = temp_df['raw_date'].apply(parse_period)
             
-            # Group by Quarter and take the LAST entry (latest vintage)
+            # Collapse vintages and save
             final_df = temp_df.dropna(subset=['date']).groupby('date').last().reset_index()
             final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
 
             final_df.to_csv(os.path.join(output_dir, f"{var_name}.csv"), index=False)
-            print(f"   ✅ SUCCESS: Saved {var_name}.csv using {target_header}")
+            print(f"   ✅ SUCCESS: Saved {var_name}.csv")
                 
         except Exception as e:
             print(f"   ❌ Error processing sheet '{sheet}': {e}")
