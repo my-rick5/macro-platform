@@ -33,8 +33,8 @@ COPY requirements.txt .
 
 # We must install numpy/scipy FIRST so scikit-umfpack can find them during its build
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir numpy scipy && \
-    pip3 install --no-cache-dir scikit-umfpack && \
+    pip3 install --no-cache-dir "numpy<2.0.0" "scipy<1.14.0" && \
+    pip3 install --no-cache-dir "scikit-umfpack==0.3.3" && \
     pip3 install --no-cache-dir -r requirements.txt && \
     pip3 install --no-cache-dir lxml symengine networkx
 
