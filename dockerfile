@@ -13,30 +13,28 @@ RUN mkdir processed && python3 preprocess.py
 FROM debian:11-slim
 USER root
 
-# 1. Install PRE-COMPILED math libraries and scikits via APT
-# This bypasses the SWIG/Meson/NumPy build errors entirely.
+# 1. Install system-level math/sparse libraries and build tools
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
     sed -i 's/main/main contrib non-free/g' /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless python3 python3-pip python3-dev \
-    # Key Fix: Install the pre-compiled Debian scikit-umfpack
-    python3-numpy python3-scipy python3-scikits-umfpack \
-    # System dependencies for other potential builds
-    libsuitesparse-dev libatlas-base-dev \
-    libxml2-dev libxslt-dev libgmp-dev libmpfr-dev libmpc-dev \
-    build-essential gcc g++ && \
+    swig pkg-config build-essential gcc g++ \
+    libsuitesparse-dev libatlas-base-dev libblas-dev liblapack-dev \
+    libxml2-dev libxslt-dev libgmp-dev libmpfr-dev libmpc-dev && \
     apt-get install -y libsymengine-dev || echo "⚠️ Warning: libsymengine-dev not found" && \
     rm -rf /var/lib/apt/lists/*
 
 # 2. Python dependency installation
 COPY requirements.txt .
 
-# IMPORTANT: We use --ignore-installed for system packages we want to keep (numpy/scipy)
-# to prevent pip from trying to upgrade them to 2.0+ which would break the scikit.
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt && \
-    pip3 install --no-cache-dir lxml symengine networkx
+# FIX: Install NumPy/SciPy first, then build scikit-umfpack without isolation.
+# This ensures the build script sees the NumPy we just installed.
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir "numpy<2.0.0" "scipy<1.14.0" && \
+    python3 -m pip install --no-cache-dir --no-build-isolation "scikit-umfpack==0.3.3" && \
+    python3 -m pip install --no-cache-dir -r requirements.txt && \
+    python3 -m pip install --no-cache-dir lxml symengine networkx
 
 # 3. User setup
 RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
@@ -44,7 +42,7 @@ RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 # --- DATA & MODULE INJECTION ---
 COPY --chown=spark:spark pyfrbus /home/spark/pyfrbus
 
-# FIX: Remove the outer __init__.py so Python looks at the inner pyfrbus package
+# Remove the outer __init__.py so Python looks at the inner pyfrbus package
 RUN rm -f /home/spark/pyfrbus/__init__.py
 
 COPY --chown=spark:spark external_data /home/spark/external_data
@@ -57,7 +55,7 @@ RUN mkdir -p /home/spark/results && chown spark:spark /home/spark/results
 WORKDIR /home/spark
 USER spark
 
-# Point PYTHONPATH to /home/spark so 'import pyfrbus' finds the directory
+# Point PYTHONPATH to /home/spark so 'import pyfrbus' works correctly
 ENV PYTHONPATH="/home/spark"
 
 CMD ["python3", "src/engine.py"]
