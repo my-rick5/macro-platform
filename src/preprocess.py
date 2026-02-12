@@ -3,9 +3,9 @@ import os
 import shutil
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #715 Audit Preview)... ")
+    print(f"🎬 Starting Preprocessor (Build #717 Sync & Destroy)... ")
     
-    # --- AGGRESSIVE WIPE ---
+    # --- ABSOLUTE WIPE ---
     try:
         if os.path.exists(output_dir):
             os.system(f"rm -rf {output_dir}/*")
@@ -21,8 +21,16 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
+    # Whitelist of approved headers
     allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0', 'LURF0']
-    mapping = {'unemp': 'labor_series', 'gdp': 'gdp_series', 'pce': 'pce_anchor'}
+    
+    # SYNCED MAPPING: Filenames now match the residual headers exactly
+    mapping = {
+        'unemp': 'unemp',  # Overwrites the corrupted unemp.csv
+        'lur':   'unemp', 
+        'gdp':   'gdp', 
+        'pce':   'pce'
+    }
     
     for sheet in xls.sheet_names:
         s_clean = sheet.strip().lower()
@@ -32,10 +40,11 @@ def clean_fed_excel(excel_path, output_dir):
         try:
             df = pd.read_excel(xls, sheet_name=sheet)
             
-            # --- NUCLEAR PURGE ---
+            # --- PURGE NON-WHITELISTED ---
             cols_to_keep = [c for c in df.columns if str(c).upper().strip() in allowed_headers]
             df = df[cols_to_keep]
 
+            # Identify target Nowcast
             target = None
             for col in df.columns:
                 if 'F0' in str(col).upper():
@@ -50,7 +59,7 @@ def clean_fed_excel(excel_path, output_dir):
                 'value': pd.to_numeric(df[target], errors='coerce')
             })
 
-            # Filter out YYYYMMDD dates (anything > 1000)
+            # Explicitly strip out YYYYMMDD date stamps (> 1000)
             temp_df = temp_df[temp_df['value'] < 1000].dropna()
 
             def parse_period(val):
@@ -66,14 +75,13 @@ def clean_fed_excel(excel_path, output_dir):
             final_df = temp_df.dropna(subset=['date']).groupby('date').last().reset_index()
             final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
 
-            # Save clean file
+            # Save clean file with the exact name the engine expects
             out_file = os.path.join(output_dir, f"{var_name}.csv")
             final_df.to_csv(out_file, index=False)
             
-            # --- THE AUDIT PREVIEW ---
-            print(f"      ✅ SUCCESS: Saved {var_name}.csv")
-            print(f"      📊 DATA PREVIEW (First 5 Rows):")
-            # This will show up in the Jenkins Console Output
+            # --- AUDIT PREVIEW ---
+            print(f"      🎯 TARGET SYNC: Saved {var_name}.csv to {out_file}")
+            print(f"      📊 DATA PREVIEW:")
             print(final_df.head(5).to_string(index=False))
             print("-" * 30)
                 
