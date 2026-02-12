@@ -6,7 +6,7 @@ import glob
 # --- THE PATH INJECTION FIX ---
 # We force the container to look into the sub-folders to find the hidden 'frbus' module.
 
-sys.path.append("/home/spark/pyfrbus")
+sys.path.insert(0, "/home/spark/pyfrbus")
 
 try:
     # This reaches through the outer folder into the inner 'pyfrbus' package
