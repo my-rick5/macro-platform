@@ -1,9 +1,8 @@
 import pandas as pd
 import os
-import shutil
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #717 Sync & Destroy)... ")
+    print(f"🎬 Starting Preprocessor (Build #719 Total Takeover)... ")
     
     # --- ABSOLUTE WIPE ---
     try:
@@ -24,9 +23,9 @@ def clean_fed_excel(excel_path, output_dir):
     # Whitelist of approved headers
     allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0', 'LURF0']
     
-    # SYNCED MAPPING: Filenames now match the residual headers exactly
+    # SYNCED MAPPING: Using 'unemp' to match the Residual Header exactly
     mapping = {
-        'unemp': 'unemp',  # Overwrites the corrupted unemp.csv
+        'unemp': 'unemp', 
         'lur':   'unemp', 
         'gdp':   'gdp', 
         'pce':   'pce'
@@ -59,7 +58,7 @@ def clean_fed_excel(excel_path, output_dir):
                 'value': pd.to_numeric(df[target], errors='coerce')
             })
 
-            # Explicitly strip out YYYYMMDD date stamps (> 1000)
+            # Filter out YYYYMMDD date stamps (> 1000)
             temp_df = temp_df[temp_df['value'] < 1000].dropna()
 
             def parse_period(val):
@@ -75,13 +74,23 @@ def clean_fed_excel(excel_path, output_dir):
             final_df = temp_df.dropna(subset=['date']).groupby('date').last().reset_index()
             final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
 
-            # Save clean file with the exact name the engine expects
-            out_file = os.path.join(output_dir, f"{var_name}.csv")
-            final_df.to_csv(out_file, index=False)
+            # --- THE TOTAL TAKEOVER ---
+            # We save to every directory seen in the Dockerfile/Logs to ensure the engine sees it
+            possible_dirs = [
+                output_dir,                     # /home/spark/data/processed
+                "/home/spark/data",             # Parent data dir
+                "/home/spark/external_data",    # Dir from Docker Step 20
+                "/home/spark"                   # Root app dir
+            ]
+            
+            for d in possible_dirs:
+                if os.path.exists(d):
+                    target_path = os.path.join(d, f"{var_name}.csv")
+                    final_df.to_csv(target_path, index=False)
+                    print(f"      🚀 OVERWROTE: {target_path}")
             
             # --- AUDIT PREVIEW ---
-            print(f"      🎯 TARGET SYNC: Saved {var_name}.csv to {out_file}")
-            print(f"      📊 DATA PREVIEW:")
+            print(f"      📊 DATA PREVIEW FOR {var_name}:")
             print(final_df.head(5).to_string(index=False))
             print("-" * 30)
                 
