@@ -5,6 +5,7 @@ pdfplumber
 sympy
 openpyxl
 lxml
+symengine
 
 # --- CI/CD & Testing ---
 pytest
