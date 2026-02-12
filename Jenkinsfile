@@ -17,6 +17,9 @@ pipeline {
         stage('Run Engine') {
             steps {
                 sh """
+                    # Ensure the host results directory exists
+                    mkdir -p results
+
                     # Start the container and let it run its own CMD
                     docker run -d --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
                     
@@ -28,6 +31,7 @@ pipeline {
                 """
             }
         }
+    } // <--- THIS was the missing brace closing 'stages'
 
     post {
         always {
