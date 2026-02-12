@@ -3,9 +3,8 @@ import os
 import shutil
 
 def clean_fed_excel(excel_path, output_dir):
-    print(f"🎬 Starting Preprocessor (Build #700 Strict Exclusion)... ")
+    print(f"🎬 Starting Preprocessor (Build #701 Nuclear Option)... ")
     
-    # 1. CLEAN SWEEP
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -16,34 +15,36 @@ def clean_fed_excel(excel_path, output_dir):
         print(f"❌ FATAL: Could not load Excel file: {e}")
         return
 
-    # Map variables to their specific Greenbook headers
-    strict_targets = {
-        'unemp': 'UNEMPF0',
-        'lur':   'UNEMPF0',
-        'gdp':   'REALGDPF0',
-        'pce':   'PCEF0'
-    }
+    # THE WHITE LIST: Only these headers are allowed to exist
+    allowed_headers = ['DATE', 'UNEMPF0', 'REALGDPF0', 'PCEF0', 'LURF0']
     mapping = {'unemp': 'adjlegrt', 'lur': 'adjlegrt', 'gdp': 'anngr', 'pce': 'eco'}
     
     for sheet in xls.sheet_names:
         s_clean = sheet.strip().lower()
-        if s_clean not in strict_targets: continue 
+        if s_clean not in mapping: continue 
             
-        target_header = strict_targets[s_clean]
         var_name = mapping[s_clean]
-        
         try:
             df = pd.read_excel(xls, sheet_name=sheet)
 
-            # --- THE GBDATE PURGE ---
-            # Drop any column that contains 'GBdate' (case-insensitive)
-            cols_to_drop = [c for c in df.columns if 'gbdate' in str(c).lower()]
-            if cols_to_drop:
-                df.drop(columns=cols_to_drop, inplace=True)
-                print(f"   🗑️ Purged metadata columns: {cols_to_drop}")
+            # --- THE NUCLEAR PURGE ---
+            # Drop every column that is not in our White List
+            cols_to_keep = [c for c in df.columns if str(c).upper().strip() in allowed_headers]
+            cols_to_kill = [c for c in df.columns if c not in cols_to_keep]
+            
+            df = df[cols_to_keep]
+            print(f"   ☢️ Purged unknown columns: {cols_to_kill}")
 
-            if target_header not in df.columns:
-                print(f"   ⚠️ Skipping '{sheet}': Header '{target_header}' not found.")
+            # Re-identify our target now that the junk is gone
+            target_header = None
+            possible_targets = ['UNEMPF0', 'LURF0', 'REALGDPF0', 'PCEF0']
+            for t in possible_targets:
+                if t in df.columns:
+                    target_header = t
+                    break
+
+            if not target_header:
+                print(f"   ⚠️ Skipping '{sheet}': No white-listed target found.")
                 continue
 
             # --- DEDUPLICATION ---
@@ -62,7 +63,7 @@ def clean_fed_excel(excel_path, output_dir):
 
             temp_df['date'] = temp_df['raw_date'].apply(parse_period)
             
-            # Collapsing multiple vintages to the last (most recent) entry
+            # Group by Quarter and take the LAST entry (latest vintage)
             final_df = temp_df.dropna(subset=['date']).groupby('date').last().reset_index()
             final_df = final_df[['date', 'value']].rename(columns={'value': var_name})
 
