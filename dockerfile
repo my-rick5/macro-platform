@@ -15,18 +15,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DEB_PYTHON_INSTALL_LAYOUT=standard \
     PATH="/root/.local/bin:${PATH}"
 
-# Install system dependencies + Build Tools + XML headers for lxml
+# Install all build-time headers (SuiteSparse, XML, SymEngine, Math)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     swig libsuitesparse-dev libatlas-base-dev libblas-dev liblapack-dev \
     pkg-config gcc g++ gfortran ninja-build \
     libxml2-dev libxslt-dev zlib1g-dev \
+    libsymengine-dev libgmp-dev libmpfr-dev libmpc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-# 1. Pre-install build backends and core math foundation
-# Pinning NumPy < 1.24 and SciPy < 1.11 to fix the 'Tester' name error
+# 1. Math Foundation (Pins for 'Tester' compatibility with legacy pyfrbus)
 RUN pip3 install --upgrade pip && \
     pip3 install --user setuptools wheel "meson-python>=0.11" "meson>=1.0" \
     "numpy>=1.19,<1.24" "scipy>=1.10,<1.11"
@@ -35,10 +35,9 @@ RUN pip3 install --upgrade pip && \
 RUN CFLAGS="-I/usr/include/suitesparse" \
     pip3 install scikit-umfpack==0.4.1 --user --no-build-isolation
 
-# 3. Install lxml and project requirements
-# Installing lxml explicitly here ensures it compiles with the headers above
+# 3. Build complex C-extensions (lxml, symengine)
 COPY requirements.txt .
-RUN pip3 install --user lxml && \
+RUN pip3 install --user lxml symengine networkx && \
     pip3 install --user -r requirements.txt
 
 # --- STAGE 3: Final Runtime (Minimal Environment) ---
@@ -46,12 +45,14 @@ FROM debian:11-slim
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install shared runtime libraries, JRE, and XML runtime libs
+# Install shared runtime libraries + JRE 17
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless python3 python3-pip \
     libsuitesparse-dev libatlas3-base libblas3 liblapack3 \
+    # Runtime libs for lxml
     libxml2 libxslt1.1 zlib1g \
-    libgmp-dev libmpfr-dev libmpc-dev \
+    # Runtime libs for symengine (CRITICAL for 'No module named symengine' fix)
+    libsymengine0.7 libgmp10 libmpfr6 libmpc3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Setup application user
@@ -71,14 +72,16 @@ COPY --chown=spark:spark external_data /home/spark/external_data
 COPY --chown=spark:spark data/library.xlsx /home/spark/data/library.xlsx
 COPY --from=dataprep --chown=spark:spark /build/processed/ /home/spark/external_data/
 
-# Finalize permissions and workspace
+# Finalize workspace
 RUN mkdir -p /home/spark/results && chown -R spark:spark /home/spark
 WORKDIR /home/spark
 USER spark
 
-# Environment Configuration
-# Ensure the compiled packages in .local are prioritized
+# Priority pathing for local packages
 ENV PYTHONPATH="/home/spark/.local/lib/python3.9/site-packages:/home/spark" \
     PATH="/home/spark/.local/bin:${PATH}"
+
+# Final check: Verify imports before the container starts
+RUN python3 -c "import symengine; import scikits.umfpack; import lxml; print('✅ All core modules loaded.')"
 
 CMD ["python3", "src/engine.py"]
