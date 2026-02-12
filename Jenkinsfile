@@ -9,22 +9,20 @@ pipeline {
         stage('Pre-Flight Cleanup') {
             steps {
                 script {
-                    echo "🧹 Clearing old Docker junk to free up space..."
-                    // This clears unused containers, networks, and images
-                    // '|| true' ensures the build doesn't fail if there's nothing to clean
-                    sh "docker system prune -f || true"
-                    sh "docker builder prune -f || true"
+                    echo "🧹 SCORCHED EARTH: Clearing ALL unused Docker images and cache..."
+                    // '-a' removes all unused images, not just dangling ones
+                    sh "docker system prune -a -f --volumes || true"
                     
                     echo "📊 Checking available disk space..."
-                    sh "df -h /var/lib/docker || df -h /"
+                    sh "df -h /"
                 }
             }
         }
 
         stage('Build & Bake Data') {
             steps {
-                // Building the image now handles the Preprocessor bake-in
-                sh "docker build -t ${IMAGE_NAME} ."
+                // Ensure we use the 'dataprep' naming in the Dockerfile
+                sh "docker build --no-cache -t ${IMAGE_NAME} ."
             }
         }
 
@@ -32,17 +30,14 @@ pipeline {
             steps {
                 sh """
                     mkdir -p results
-                    
-                    # Start container (runs the internal CMD: python3 src/engine.py)
                     docker run -d --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
                     
-                    echo "⏳ Waiting for Engine to solve quarters..."
+                    echo "⏳ Waiting for Engine to solve..."
                     sleep 30
                     
                     echo "📊 --- ENGINE LOGS ---"
                     docker logs engine-${env.BUILD_NUMBER}
                     
-                    # Grab the results
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
                 """
             }
@@ -53,6 +48,9 @@ pipeline {
         always {
             sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
             archiveArtifacts artifacts: 'results/*.csv', allowEmptyArchive: true
+            
+            // Clean up the specific image we just built to save space for the NEXT run
+            sh "docker rmi ${IMAGE_NAME} || true"
         }
     }
 }
