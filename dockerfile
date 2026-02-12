@@ -3,7 +3,7 @@ FROM debian:11-slim AS dataprep
 USER root
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
     apt-get update || true && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
-RUN pip3 install --break-system-packages pandas openpyxl
+RUN pip3 install pandas openpyxl
 WORKDIR /build
 COPY src/preprocess.py .
 COPY data/library.xlsx .
@@ -23,8 +23,8 @@ RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";"
 
 # Install python dependencies + symengine
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt && \
-    pip3 install --no-cache-dir --break-system-packages lxml symengine
+RUN pip3 install --no-cache-dir -r requirements.txt && \
+    pip3 install --no-cache-dir lxml symengine
 
 RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 
