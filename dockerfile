@@ -1,5 +1,5 @@
 # --- STAGE 1: DataPrep ---
-FROM debian:12-slim AS dataprep
+FROM debian:11-slim AS dataprep
 USER root
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
     apt-get update || true && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
@@ -10,7 +10,7 @@ COPY data/library.xlsx .
 RUN mkdir processed && python3 preprocess.py
 
 # --- STAGE 2: Final Runtime ---
-FROM debian:12-slim
+FROM debian:11-slim
 USER root
 RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";" > /etc/apt/apt.conf.d/99ignore-security && \
     apt-get update || true && \
