@@ -9,40 +9,30 @@ pipeline {
         stage('Smart Cleanup') {
             steps {
                 script {
-                    echo "🧹 SMART CLEANUP: Removing old containers and dangling images..."
-                    // Removes stopped containers and 'dangling' images, but KEEPS the base debian image and cache
+                    env.START_TIME = System.currentTimeMillis()
+                    echo "🧹 SMART CLEANUP: Pruning dangling objects..."
                     sh "docker container prune -f"
                     sh "docker image prune -f"
-                    
-                    echo "📊 Checking available disk space..."
-                    sh "df -h /"
                 }
             }
         }
 
         stage('Build & Bake Data') {
             steps {
-                sh """
-                    echo "📂 Verifying context before build..."
-                    ls -d data/library.xlsx external_data/longdata.csv
-                    
-                    echo "🚀 Starting Build ${env.BUILD_NUMBER}..."
-                    # Removed --no-cache to allow Docker to reuse compiled layers (like UMFPACK)
-                    docker build -t ${IMAGE_NAME} .
-                """
+                script {
+                    def buildStart = System.currentTimeMillis()
+                    sh "docker build -t ${IMAGE_NAME} ."
+                    def buildEnd = System.currentTimeMillis()
+                    env.BUILD_TIME = "${((buildEnd - buildStart) / 1000).toString()}s"
+                }
             }
         }
 
         stage('Run Engine') {
             steps {
                 sh """
-                    mkdir -p results
-                    mkdir -p debug_data
-                    
-                    echo "🏃 Running Engine Container..."
+                    mkdir -p results debug_data
                     docker run --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
-                    
-                    echo "📥 Extracting artifacts..."
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/external_data/. ./debug_data/
                 """
@@ -53,13 +43,20 @@ pipeline {
     post {
         always {
             script {
-                echo "🧹 Post-build cleanup..."
+                // Calculate Total Duration
+                def totalTimeMs = System.currentTimeMillis() - env.START_TIME.toLong()
+                def durationMin = (totalTimeMs / 1000) / 60
+                def summary = "Build: ${env.BUILD_TIME} | Total: ${String.format('%.2f', durationMin)}m"
+                
+                // This puts the timing info directly on the Jenkins Build History sidebar
+                currentBuild.description = summary
+                
+                echo "--------------------------------------------------"
+                echo "🏁 FINAL STATS: ${summary}"
+                echo "--------------------------------------------------"
+
                 sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
-                
-                // Archive artifacts from the successful run
                 archiveArtifacts artifacts: 'results/*.csv, debug_data/*.csv', allowEmptyArchive: true
-                
-                // Optional: keep the last 3 build images, or remove current one
                 sh "docker rmi ${IMAGE_NAME} || true"
             }
         }
