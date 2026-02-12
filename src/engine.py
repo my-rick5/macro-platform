@@ -5,25 +5,24 @@ import glob
 
 # --- THE PATH INJECTION FIX ---
 # We force the container to look into the sub-folders to find the hidden 'frbus' module.
-sys.path.append("/home/spark")
+
 sys.path.append("/home/spark/pyfrbus")
 
 try:
-    # Attempt 1: Standard nested import
-    from pyfrbus.pyfrbus import frbus
-    from pyfrbus.pyfrbus.frbus import Frbus
-    print("✅ Successfully imported Frbus via double-nested path.")
-except ImportError:
+    # This reaches through the outer folder into the inner 'pyfrbus' package
+    from pyfrbus import frbus
+    from pyfrbus.frbus import Frbus
+    print("✅ Successfully imported Frbus via absolute path injection.")
+except ImportError as e:
+    print(f"❌ Still failing. Detailed Error: {e}")
+    # Fallback to the most direct possible import
     try:
-        # Attempt 2: Direct access to the inner package
-        from pyfrbus import frbus
-        from pyfrbus.frbus import Frbus
-        print("✅ Successfully imported Frbus via single-nested path.")
-    except ImportError as e:
-        print(f"❌ FATAL: Module import failed. Error: {e}")
-        # Help us debug by listing exactly what Python sees
-        if os.path.exists("/home/spark/pyfrbus"):
-            print(f"📂 Contents of /home/spark/pyfrbus: {os.listdir('/home/spark/pyfrbus')}")
+        sys.path.append("/home/spark/pyfrbus/pyfrbus")
+        import frbus
+        from frbus import Frbus
+        print("✅ Successfully imported Frbus via inner-path override.")
+    except Exception as e2:
+        print(f"❌ FATAL: {e2}")
         sys.exit(1)
 
 def run_pro_engine():
