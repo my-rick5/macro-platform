@@ -17,21 +17,20 @@ pipeline {
         stage('Run Engine') {
             steps {
                 sh """
-                    # Ensure the host results directory exists
                     mkdir -p results
-
-                    # Start the container and let it run its own CMD
                     docker run -d --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
                     
-                    # Wait for the engine to finish solving (it takes about 10-15 seconds)
+                    echo "⏳ Waiting for Engine to solve..."
                     sleep 30
                     
-                    # Pull the results
+                    echo "📊 --- ENGINE CONSOLE OUTPUT ---"
+                    docker logs engine-${env.BUILD_NUMBER}
+                    echo "-------------------------------"
+                    
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
                 """
             }
         }
-    } // <--- THIS was the missing brace closing 'stages'
 
     post {
         always {
