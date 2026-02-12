@@ -30,7 +30,7 @@ RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";"
 # Install python dependencies + symengine
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt && \
-    pip3 install --no-cache-dir lxml symengine
+    pip3 install --no-cache-dir lxml symengine networkx
 
 RUN groupadd -g 1099 spark && useradd -u 1099 -g 1099 -d /home/spark -m spark
 
