@@ -36,14 +36,12 @@ pipeline {
             steps {
                 sh """
                     mkdir -p results
+                    # DEBUG: List exactly what is inside the data folders in the image
+                    docker run --rm ${IMAGE_NAME} ls -R /home/spark/external_data
+                    
                     docker run -d --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
-                    
-                    echo "⏳ Waiting for Engine to solve..."
                     sleep 30
-                    
-                    echo "📊 --- ENGINE LOGS ---"
                     docker logs engine-${env.BUILD_NUMBER}
-                    
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
                 """
             }
