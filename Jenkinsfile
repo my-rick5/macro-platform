@@ -10,7 +10,10 @@ pipeline {
             steps {
                 script {
                     echo "🧹 SCORCHED EARTH: Clearing ALL unused Docker images and cache..."
+                    // Removes all unused images and volumes to ensure a clean build
                     sh "docker system prune -a -f --volumes || true"
+                    
+                    echo "📊 Checking available disk space..."
                     sh "df -h /"
                 }
             }
@@ -19,11 +22,14 @@ pipeline {
         stage('Build & Bake Data') {
             steps {
                 sh """
-                    docker pull debian:12-slim
+                    # Ensure the base image exists BEFORE we start building
+                    docker pull debian:11-slim
+
                     echo "📂 Verifying context before build..."
                     ls -d data/library.xlsx external_data/longdata.csv
                     
                     echo "🚀 Starting Build ${env.BUILD_NUMBER}..."
+                    # --no-cache ensures the Preprocessor runs fresh every time
                     docker build --no-cache -t ${IMAGE_NAME} .
                 """
             }
@@ -35,13 +41,14 @@ pipeline {
                     mkdir -p results
                     mkdir -p debug_data
                     
-                    # 1. Run the container
+                    echo "🏃 Running Engine Container..."
                     docker run --name engine-${env.BUILD_NUMBER} ${IMAGE_NAME}
                     
-                    # 2. Extract Final Results
+                    echo "📥 Extracting artifacts from container..."
+                    # Copy final engine results
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/results/. ./results/
                     
-                    # 3. NEW: Extract Preprocessed Data (to verify the 'unemp.csv' timestamps)
+                    # Copy preprocessed CSVs to verify dates and timestamps
                     docker cp engine-${env.BUILD_NUMBER}:/home/spark/external_data/. ./debug_data/
                 """
             }
@@ -51,13 +58,13 @@ pipeline {
     post {
         always {
             script {
-                // Remove the container
+                echo "🧹 Post-build cleanup..."
                 sh "docker rm -f engine-${env.BUILD_NUMBER} || true"
                 
-                # Archive both the final results and the preprocessed debug files
+                // Archive both the engine output and our preprocessed debug files
                 archiveArtifacts artifacts: 'results/*.csv, debug_data/*.csv', allowEmptyArchive: true
                 
-                // Clean up the specific image
+                // Remove the specific image to prevent disk bloat
                 sh "docker rmi ${IMAGE_NAME} || true"
             }
         }
