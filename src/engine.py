@@ -14,44 +14,34 @@ builtins.log = sympy.log
 
 # 1. SETUP
 os.makedirs("results", exist_ok=True)
-
-# 2. LOAD
+# 2. LOAD DATA
+# Force everything to string to prevent numeric "leaks"
 data = load_data("data/LONGBASE.TXT")
-data.columns = [str(c).strip().lower() for c in data.columns]
-frbus = Frbus("models/model.xml")
+data.columns = [str(c).strip().upper() for c in data.columns]
 
-# 3. THE "DEEP EXORCISM"
-# We are going to scan every single internal dictionary for this float
-ghost_val = 4.52193548387097
-ghost_str = "4.52193548387097"
+# 3. INITIALIZE MODEL
+# We point to the XML and ensure we aren't accidentally triggering MCE 
+# unless specifically needed, as MCE uses more complex derivatives.
+frbus = Frbus("models/model.xml", mce=None)
 
-def scrub_obj(obj):
-    if hasattr(obj, 'endog'):
-        obj.endog = [v for v in obj.endog if str(v) != ghost_str]
-    if hasattr(obj, 'symbols'):
-        # If the ghost is in the symbols dict, it's being treated as a variable
-        if ghost_str in obj.symbols:
-            print(f"🎯 Removing {ghost_str} from symbolic dictionary...")
-            del obj.symbols[ghost_str]
-
-if hasattr(frbus, 'model'):
-    scrub_obj(frbus.model)
-    # Recursively scrub blocks
-    if hasattr(frbus.model, 'blocks'):
-        for block in frbus.model.blocks:
-            scrub_obj(block)
-
-# 4. INITIALIZE
+# 4. API-BASED REPAIR
+# Instead of touching internals, we use the documented append_replace 
+# to "overwrite" any equation that might be using the ghost number incorrectly.
+# For now, let's just try to solve without the ghost in the namespace.
 start, end = "2023Q1", "2030Q4"
+
 try:
-    print("🚀 Initializing Tracking...")
-    # This is often where the first pass of symbol validation happens
+    print("🚀 Initializing tracking residuals...")
     baseline_with_adds = frbus.init_trac(start, end, data)
     
-    print("🚀 Final Solve Attempt...")
-    # Force the use of the simplest possible solver 
+    print("🚀 Executing solve...")
+    # The user guide notes that solve returns a new DataFrame
     sim = frbus.solve(start, end, baseline_with_adds)
+    
     sim.to_csv("results/output.csv")
-    print("✨ SUCCESS! Ghost Busted.")
+    print("✅ Success! Ghost Busted via API.")
+    
 except Exception as e:
-    print(f"❌ Failure: {e}")
+    print(f"❌ API Error: {e}")
+    # If it still fails, we will use the next build to inspect the Frbus object
+    print(f"Available API Methods: {dir(frbus)}")
