@@ -7,6 +7,7 @@ try:
     import numpy as np
     import sympy
     import scipy
+    import builtins
     builtins.Derivative = sympy.Derivative
     builtins.symbols = sympy.symbols
     builtins.exp = sympy.exp # Common in FRB/US models
