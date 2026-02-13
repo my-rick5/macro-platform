@@ -17,46 +17,32 @@ builtins.log = sympy.log
 os.makedirs("results", exist_ok=True)
 os.makedirs("external_data", exist_ok=True)
 
-# 1. XML AUTOPSY & REPAIR
-model_xml = "models/model.xml"
+# 1. LOAD MODEL
+frbus = Frbus("models/model.xml")
+
+# 2. THE EQUATION SCANNER
+# We search the compiled equations for the ghost value
 ghost_val = "4.52193548387097"
+print(f"🔎 Scanning {len(frbus.lexed_eqs)} compiled equations for the ghost...")
 
-print(f"🕵️ Scanning {model_xml} for structural anomalies...")
-tree = ET.parse(model_xml)
-root = tree.getroot()
+for eq_name, formula in frbus.lexed_eqs.items():
+    # formula is likely a string or a list of tokens
+    if ghost_val in str(formula):
+        print(f"🚨 TARGET FOUND in equation: {eq_name}")
+        print(f"   Formula: {formula}")
 
-# Search for any tag or attribute that contains our ghost number
-found = False
-for elem in root.iter():
-    # Check if the ghost is in the tag text or any attribute
-    if ghost_val in (elem.text or "") or any(ghost_val in str(v) for v in elem.attrib.values()):
-        print(f"🎯 Found ghost in element: {elem.tag} | Attribs: {elem.attrib}")
-        # If it's a variable name, change it to a safe string
-        if elem.get('name') == ghost_val:
-            elem.set('name', 'GHOST_FIXED')
-            found = True
+# 3. THE "FORCE CONSTANT" FIX
+# If the ghost is being treated as a variable, we move it to the 'constants' list
+if hasattr(frbus, 'constants'):
+    print(f"🛡️ Forcing {ghost_val} into the constants table...")
+    frbus.constants[ghost_val] = 4.52193548387097
 
-if found:
-    print("🩹 Patching XML and saving to models/model_fixed.xml")
-    tree.write("models/model_fixed.xml")
-    model_to_load = "models/model_fixed.xml"
-else:
-    print("ghost not found in literal XML strings. Using original model.")
-    model_to_load = model_xml
-
-# 2. LOAD DATA
+# 4. DATA & SOLVE
 data = load_data("data/LONGBASE.TXT")
 data.columns = [str(c).strip().lower() for c in data.columns]
-if 'dmptmax' not in data.columns:
-    data['dmptmax'] = 0.0
-# Ensure our fixed variable exists in data if we renamed it
-if found:
-    data['ghost_fixed'] = 4.52193548387097
 
-# 3. SOLVE
 try:
-    frbus = Frbus(model_to_load)
-    print("🚀 Executing solve...")
+    print("🚀 Attempting solve with constant-injection...")
     baseline_with_adds = frbus.init_trac("2023Q1", "2030Q4", data)
     sim = frbus.solve("2023Q1", "2030Q4", baseline_with_adds)
     sim.to_csv("results/output.csv")
