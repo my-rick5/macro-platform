@@ -3,6 +3,7 @@ from pyfrbus.frbus import Frbus
 from pyfrbus.load_data import load_data
 import sympy
 import builtins
+import os
 
 # Inject Derivative into the global builtins so the lambdas in 
 # pyfrbus/run_jac.py can see it regardless of import path issues.
