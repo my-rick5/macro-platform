@@ -27,17 +27,18 @@ end = "2030Q4"
 # This ensures all model variables are mapped to symbols, not values
 baseline_with_adds = frbus.init_trac(start, end, data)
 
-# ... after init_trac ...
+# 1. Force headers to be uppercase strings
+data.columns = [str(col).strip().upper() for col in data.columns]
 
-# # 1. Sanitize the internal endogenous variable list
-# # This ensures no floats 'leaked' into the list of things to differentiate
-# frbus.endog = [str(v) for v in frbus.endog if not isinstance(v, (int, float))]
+# 2. Force the Index (Dates) to be strings (e.g., '2023Q1')
+data.index = [str(idx).strip().upper() for idx in data.index]
 
-# # 2. Check if the specific value is actually a variable value
-# print(f"Checking if 4.5219... exists in current data slice...")
-# current_val = data.loc[start, :].iloc[0] # Just a sample
-# print(f"Sample data point: {current_val}")
-
+# 3. Double-check: Is that ghost number a column name now?
+ghost_val = "4.52193548387097"
+if ghost_val in data.columns:
+    print(f"🚨 FOUND IT: {ghost_val} is a column header. Renaming it to 'UNKNOWN_VAR'...")
+    data = data.rename(columns={ghost_val: "UNKNOWN_VAR"})
+    
 # 3. Try the solve again with a cleaner namespace
 opts = {'use_jac': False}
 
