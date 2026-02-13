@@ -4,6 +4,14 @@ from pyfrbus.frbus import Frbus
 from pyfrbus.sim_lib import sim_plot
 from pyfrbus.load_data import load_data
 
+import sympy
+import builtins
+
+# Inject Derivative into the global builtins so the lambdas in 
+# pyfrbus/run_jac.py can see it regardless of import path issues.
+builtins.Derivative = sympy.Derivative
+builtins.symbols = sympy.symbols
+builtins.exp = sympy.exp # Common in FRB/US models
 
 # Load data
 data = load_data("data/LONGBASE.TXT")
