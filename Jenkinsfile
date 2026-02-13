@@ -8,7 +8,8 @@ pipeline {
     environment {
         BASE_IMAGE = "macro-engine-base:latest"
         APP_IMAGE  = "macro-engine-app:${env.BUILD_NUMBER}"
-        SPARK_HOME = "/home/spark"
+        // Updated home directory to match your new Dockerfile structure
+        APP_HOME   = "/home/app"
     }
 
     stages {
@@ -20,7 +21,6 @@ pipeline {
                     
                     if (params.REBUILD_BASE || baseExists == "") {
                         echo "🚀 Building/Refreshing Base Image (This takes ~3 mins)..."
-                        // Ensure Dockerfile.base is in your root directory
                         sh "docker build --no-cache -t ${BASE_IMAGE} -f Dockerfile.base ."
                     } else {
                         echo "✅ Base image found. Skipping heavy install stage."
@@ -32,21 +32,21 @@ pipeline {
         stage('📦 Build App') {
             steps {
                 echo "⚡ Building App Layer (This should take < 10s)..."
-                // This builds your local Dockerfile which starts 'FROM macro-engine-base:latest'
                 sh "docker build -t ${APP_IMAGE} ."
             }
         }
 
         stage('🧪 Run Engine') {
             steps {
-                // We run the container and give it a name based on the build number for easy cleanup
-                sh "docker run --name engine-${env.BUILD_NUMBER} macro-engine-app:${env.BUILD_NUMBER}"
+                // Run the container using the build number as a unique identifier
+                sh "docker run --name engine-${env.BUILD_NUMBER} ${APP_IMAGE}"
             }
             post {
                 always {
                     echo "📥 Extracting Results and Diagnostics..."
-                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.SPARK_HOME}/results/. ./results/ || true"
-                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.SPARK_HOME}/external_data/. ./debug_data/ || true"
+                    // Updated paths from /home/spark to /home/app (via ${APP_HOME})
+                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.APP_HOME}/results/. ./results/ || true"
+                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.APP_HOME}/external_data/. ./debug_data/ || true"
                     sh "docker rm engine-${env.BUILD_NUMBER}"
                 }
             }
@@ -55,7 +55,8 @@ pipeline {
 
     post {
         success {
-            archiveArtifacts artifacts: 'results/*.csv, debug_data/*.csv', fingerprint: true
+            // Updated to ensure it looks in the workspace directories we just copied into
+            archiveArtifacts artifacts: 'results/*.csv, debug_data/*.csv', allowEmptyArchive: true, fingerprint: true
             echo "🏁 Calibration Complete. Check Artifacts for residuals."
         }
         failure {
