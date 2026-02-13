@@ -29,18 +29,16 @@ pipeline {
             }
         }
 
-        stage('Fetch Tealbook') {
-            steps {
-                // This ensures we use the correct python from our base image
-                sh "docker run --rm macro-engine-base:latest python3 /home/spark/src/fetch_tealbook.py"
-            }
-        }
-
         stage('📦 Build App') {
             steps {
                 echo "⚡ Building App Layer (This should take < 10s)..."
                 // This builds your local Dockerfile which starts 'FROM macro-engine-base:latest'
                 sh "docker build -t ${APP_IMAGE} ."
+
+                echo "📡 Fetching Tealbook Data..."
+                    // 2. Run the fetch script using the image we JUST built
+                    // We use the app image because we know /home/spark/src/ exists there
+                    sh "docker run --rm ${APP_IMAGE} python3 src/fetch_tealbook.py"
             }
         }
 
