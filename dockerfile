@@ -1,15 +1,10 @@
-# Use the local base image we created
 FROM macro-engine-base:latest
 
-WORKDIR /home/spark
+WORKDIR /home/app
 
-# Copy the real Excel file and 'rename' it to library.xlsx internally
-COPY external_data/GBweb_Row_Format.xlsx ./library.xlsx
-COPY external_data/longdata.csv ./external_data/longdata.csv
-
-# Copy only the files that change frequently
+# Copy your local project files
 COPY src/ ./src/
 COPY models/ ./models/
 
-# The command to run your diagnostic engine
+# The fix: Ensure the engine runs from the directory where it can see 'pyfrbus'
 CMD ["python3", "src/engine.py"]
