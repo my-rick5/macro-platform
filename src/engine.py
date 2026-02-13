@@ -1,6 +1,6 @@
 import pandas
 
-from pyfrbus.frbus import Frbus
+from pyfrbus.frbus import frbus
 from pyfrbus.sim_lib import sim_plot
 from pyfrbus.load_data import load_data
 
