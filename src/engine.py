@@ -6,7 +6,7 @@ from pyfrbus.load_data import load_data
 
 
 # Load data
-data = load_data("pyfrbus/pyfrbus/data/LONGBASE.TXT")
+data = load_data("/home/spark/pyfrbus/pyfrbus/data/LONGBASE.TXT")
 
 # Load model
 frbus = Frbus("model.xml")
