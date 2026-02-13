@@ -16,39 +16,34 @@ builtins.log = sympy.log
 
 os.makedirs("results", exist_ok=True)
 
-# 1. LOAD MODEL
+# 1. THE "SYMPY" SHIELD
+# We override the Symbol class to prevent it from creating symbols that are floats.
+# This is a 'brute force' way to stop the engine from differentiating a number.
+original_symbol = sympy.Symbol
+def safe_symbol(name, **kwargs):
+    try:
+        float(name)
+        # If the name can be a float, it's not a variable. Return a constant instead.
+        return sympy.Float(name)
+    except ValueError:
+        return original_symbol(name, **kwargs)
+
+sympy.Symbol = safe_symbol
+print("🛡️ SymPy Shield Activated: Blocking numeric symbols.")
+
+# 2. LOAD MODEL & DATA
 frbus = Frbus("models/model.xml")
-
-# 2. DIAGNOSTIC: Why 933?
-# We print the first 50 variable names. If we see numbers here, 
-# the model.xml parsing is definitely the culprit.
-print(f"🧐 Inspecting variable list (Total: {len(frbus.endo_names)}):")
-print(f"Sample: {frbus.endo_names[:50]}")
-
-# 3. THE "GHOST" INTERCEPTION
-ghost_str = "4.52193548387097"
-
-# We check if the ghost is considered a variable and KILL IT
-if ghost_str in frbus.endo_names:
-    print(f"🎯 GHOST DETECTED in Endogenous list! Removing...")
-    frbus.endo_names.remove(ghost_str)
-
-if ghost_str in frbus.exo_names:
-    print(f"🎯 GHOST DETECTED in Exogenous list! Removing...")
-    frbus.exo_names.remove(ghost_str)
-
-# 4. DATA ALIGNMENT
 data = load_data("data/LONGBASE.TXT")
 data.columns = [str(c).strip().lower() for c in data.columns]
 if 'dmptmax' not in data.columns:
     data['dmptmax'] = 0.0
 
-# 5. SOLVE
+# 3. SOLVE
 try:
-    print("🚀 Attempting solve with sanitized symbol table...")
+    print("🚀 Solving with Symbolic Shielding...")
     baseline_with_adds = frbus.init_trac("2023Q1", "2030Q4", data)
     sim = frbus.solve("2023Q1", "2030Q4", baseline_with_adds)
     sim.to_csv("results/output.csv")
-    print("✨ Success!")
+    print("✨ Success! The ghost was blocked at the symbolic layer.")
 except Exception as e:
     print(f"❌ Failure: {e}")
