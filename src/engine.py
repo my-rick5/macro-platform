@@ -34,12 +34,19 @@ if os.path.exists(model_path):
 
 # 2. EMERGENCY PATCH: Replace the number with a 1.0 (for testing)
 # This will tell us if the rest of the model can solve without that specific value.
-print("🩹 Attempting temporary XML patch to bypass the crash...")
-with open(model_path, 'r') as f:
-    content = f.read()
-new_content = content.replace(ghost_num, "1.0") 
-with open(model_path, 'w') as f:
-    f.write(new_content)
+ghost_str = "4.52193548387097"
+
+if hasattr(frbus, 'model'):
+    print(f"🧹 Scrubbing {ghost_str} from symbolic lists...")
+    # Filter the endogenous variable list
+    if hasattr(frbus.model, 'endog'):
+        frbus.model.endog = [v for v in frbus.model.endog if str(v) != ghost_str]
+    
+    # Check if the number snuck into the block ordering
+    if hasattr(frbus.model, 'blocks'):
+        for block in frbus.model.blocks:
+            if hasattr(block, 'endog'):
+                block.endog = [v for v in block.endog if str(v) != ghost_str]
 
 # 3. RUN ENGINE AS NORMAL
 # (Include your standard load_data, init_trac, and solve logic here)
