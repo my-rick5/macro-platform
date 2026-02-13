@@ -10,6 +10,7 @@ scipy<1.11.0
 scikit-umfpack
 multiprocess
 dill
+scikit-misc
 
 # --- CI/CD & Testing ---
 pytest
