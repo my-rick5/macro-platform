@@ -40,7 +40,7 @@ pipeline {
         stage('🧪 Run Engine') {
             steps {
                 // We run the container and give it a name based on the build number for easy cleanup
-                sh "docker run --name engine-${env.BUILD_NUMBER} macro-engine-app:${APP_IMAGE}"
+                sh "docker run --name engine-${env.BUILD_NUMBER} macro-engine-app:${env.BUILD_NUMBER}"
             }
             post {
                 always {
