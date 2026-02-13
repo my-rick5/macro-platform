@@ -16,28 +16,24 @@ builtins.log = sympy.log
 
 os.makedirs("results", exist_ok=True)
 
-# 1. PATCH RUN_JAC.PY INTERNALS
-original_jac_2_callable = pyfrbus.run_jac.jac_2_callable
+# 1. PATCH JACOBIAN.PY
+# We wrap the create_jacobian function to filter out numeric 'variables'
+original_create_jacobian = pyfrbus.jacobian.create_jacobian
 ghost_val = "4.52193548387097"
 
-def patched_jac_2_callable(jac):
-    sanitized_jac = []
-    for row, col, expr_str in jac:
-        # If the ghost number is being treated as a variable in a derivative string
-        # e.g., "Derivative(variable, 4.52193548387097)"
-        # we strip it out or replace it with a constant 0.
-        if ghost_val in expr_str:
-            print(f"🩹 Sanitizing Jacobian string: {expr_str[:50]}...")
-            # If the string is a derivative wrt the ghost, it should be 0
-            if f", {ghost_val})" in expr_str:
-                expr_str = "0"
-        sanitized_jac.append((row, col, expr_str))
+def patched_create_jacobian(n_eqs, rhs_vars, exprs, data_hash):
+    # Filter rhs_vars: remove any 'variable' that is actually our ghost number
+    sanitized_rhs_vars = []
+    for var_set in rhs_vars:
+        # Create a new set excluding the ghost string
+        clean_set = {v for v in var_set if v != ghost_val}
+        sanitized_rhs_vars.append(clean_set)
     
-    return original_jac_2_callable(sanitized_jac)
+    return original_create_jacobian(n_eqs, sanitized_rhs_vars, exprs, data_hash)
 
-# Inject the patch
-pyfrbus.run_jac.jac_2_callable = patched_jac_2_callable
-print("🛡️ run_jac.py string-interceptor active.")
+# Inject the patch into the library at runtime
+pyfrbus.jacobian.create_jacobian = patched_create_jacobian
+print("🛡️ jacobian.py interceptor active: Ghost variables will be ignored.")
 
 # 2. LOAD & SOLVE
 data = load_data("data/LONGBASE.TXT")
@@ -45,7 +41,7 @@ data.columns = [str(c).strip().lower() for c in data.columns]
 frbus = Frbus("models/model.xml")
 
 try:
-    print("🚀 Running solve...")
+    print("🚀 Attempting solve with Jacobian Variable Filtering...")
     baseline_with_adds = frbus.init_trac("2023Q1", "2030Q4", data)
     sim = frbus.solve("2023Q1", "2030Q4", baseline_with_adds)
     sim.to_csv("results/output.csv")
