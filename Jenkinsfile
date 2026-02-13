@@ -30,6 +30,12 @@ pipeline {
         }
 
         stage('Fetch Tealbook') {
+            agent {
+                docker { 
+                    image 'macro-engine-base:latest' // Use the image from Build #831
+                    reuseNode true
+                }
+            }
             steps {
                 // This ensures we use the correct python from our base image
                 sh "python3 src/fetch_tealbook.py"
