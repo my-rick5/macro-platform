@@ -32,7 +32,7 @@ pipeline {
         stage('Fetch Tealbook') {
             steps {
                 // This ensures we use the correct python from our base image
-                sh "docker run --rm -v ${WORKSPACE}:/app -w /app ${BASE_IMAGE} python3 src/fetch_tealbook.py"
+                sh "docker run --rm macro-engine-base:latest python3 /home/spark/src/fetch_tealbook.py"
             }
         }
 
