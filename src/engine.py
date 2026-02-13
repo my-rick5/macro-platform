@@ -1,45 +1,30 @@
-import os
-import sys
-import pandas as pd
-import traceback
-from fetch_tealbook import fetch_and_verify_macro_data
+import pandas
 
-def run_pipeline():
-    print("\n" + "="*50)
-    print("🚀 MACRO ENGINE: INTEGRATED PIPELINE")
-    print("="*50)
-    
-    try:
-        # STAGE 1: Data Fetching
-        print("\n📡 STAGE 1: Processing Federal Reserve Data...")
-        fetch_and_verify_macro_data()
-        
-        # Use absolute path to avoid working directory confusion
-        processed_path = "/home/spark/data/tealbook_full_x.csv"
-        
-        if os.path.exists(processed_path):
-            df = pd.read_csv(processed_path)
-            print(f"✅ Success! Loaded data from {processed_path}")
-            print(f"📊 Rows: {len(df)} | Columns: {list(df.columns)}")
-            print("\n📥 DATA PREVIEW (Last 5 Quarters):")
-            print(df.tail(5).to_string())
-        else:
-            print(f"❌ CRITICAL: {processed_path} missing.")
-            sys.exit(1)
+from pyfrbus.frbus import Frbus
+from pyfrbus.sim_lib import sim_plot
+from pyfrbus.load_data import load_data
 
-        # STAGE 2: Calibration
-        print("\n🧪 STAGE 2: Running Calibration Engine...")
-        # (Your math/solver logic goes here)
-        print("✅ Stage 2 Complete.")
 
-    except Exception as e:
-        print(f"❌ PIPELINE CRASHED: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+# Load data
+data = load_data("../data/LONGBASE.TXT")
 
-    print("\n" + "="*50)
-    print("🏁 SUCCESSful BUILD")
-    print("="*50)
+# Load model
+frbus = Frbus("../models/model.xml")
 
-if __name__ == "__main__":
-    run_pipeline()
+# Specify dates
+start = pandas.Period("2040Q1")
+end = start + 23
+
+# Standard configuration, use surplus ratio targeting
+data.loc[start:end, "dfpdbt"] = 0
+data.loc[start:end, "dfpsrp"] = 1
+
+# Solve to baseline with adds
+with_adds = frbus.init_trac(start, end, data)
+
+# 100 bp monetary policy shock and solve
+with_adds.loc[start, "rffintay_aerr"] += 1
+sim = frbus.solve(start, end, with_adds)
+
+# View results
+sim_plot(with_adds, sim, start, end)
