@@ -8,6 +8,8 @@ lxml
 symengine
 scipy<1.11.0
 scikit-umfpack
+multiprocess
+dill
 
 # --- CI/CD & Testing ---
 pytest
