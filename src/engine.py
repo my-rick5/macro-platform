@@ -1,14 +1,23 @@
-import pandas as pd
+import pandas
+
 from pyfrbus.frbus import Frbus
+from pyfrbus.sim_lib import sim_plot
 from pyfrbus.load_data import load_data
 
-# 1. Load Data and Model
-data = load_data("data/LONGBASE.TXT")
-frbus = Frbus("models/model.xml")
+import sympy
+import builtins
 
-# 2. Define Simulation Window
-start = "2023Q1"  # Ensure these match the index format in LONGBASE.TXT
-end = "2030Q4"
+# Inject Derivative into the global builtins so the lambdas in 
+# pyfrbus/run_jac.py can see it regardless of import path issues.
+builtins.Derivative = sympy.Derivative
+builtins.symbols = sympy.symbols
+builtins.exp = sympy.exp # Common in FRB/US models
+
+# Load data
+data = load_data("data/LONGBASE.TXT")
+
+# Load model
+frbus = Frbus("models/model.xml")
 
 # 3. CRITICAL: Initialize Tracking Residuals
 # This ensures all model variables are mapped to symbols, not values
