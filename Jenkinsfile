@@ -45,6 +45,7 @@ pipeline {
                 always {
                     echo "📥 Extracting Results and Diagnostics..."
                     // Updated paths from /home/spark to /home/app (via ${APP_HOME})
+                    sh "docker run --entrypoint /bin/sh ${APP_IMAGE} -c 'ls -R /home/app'"
                     sh "docker cp engine-${env.BUILD_NUMBER}:${env.APP_HOME}/results/. ./results/ || true"
                     sh "docker cp engine-${env.BUILD_NUMBER}:${env.APP_HOME}/external_data/. ./debug_data/ || true"
                     sh "docker rm engine-${env.BUILD_NUMBER}"
