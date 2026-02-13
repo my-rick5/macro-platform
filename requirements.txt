@@ -7,7 +7,7 @@ openpyxl
 lxml
 symengine
 scipy<1.11.0
-scikits.sparse
+scikit-umfpack
 
 # --- CI/CD & Testing ---
 pytest
