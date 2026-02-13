@@ -31,7 +31,7 @@ data.loc[start:end, "dfpsrp"] = 1
 with_adds = frbus.init_trac(start, end, data)
 
 # 100 bp monetary policy shock and solve
-with_adds.loc[start, "rffintay_aerr"] += 1
+with_adds.loc[start, "rffintay_aerr"] += 0.5
 sim = frbus.solve(start, end, with_adds)
 
 # View results
