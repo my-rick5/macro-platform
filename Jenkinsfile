@@ -29,6 +29,13 @@ pipeline {
             }
         }
 
+        stage('Fetch Tealbook') {
+            steps {
+                // This ensures we use the correct python from our base image
+                sh "python3 src/fetch_tealbook.py"
+            }
+        }
+
         stage('📦 Build App') {
             steps {
                 echo "⚡ Building App Layer (This should take < 10s)..."
