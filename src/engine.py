@@ -6,10 +6,10 @@ from pyfrbus.load_data import load_data
 
 
 # Load data
-data = load_data("../data/LONGBASE.TXT")
+data = load_data("LONGBASE.TXT")
 
 # Load model
-frbus = Frbus("../models/model.xml")
+frbus = Frbus("model.xml")
 
 # Specify dates
 start = pandas.Period("2040Q1")
