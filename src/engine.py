@@ -17,32 +17,36 @@ builtins.log = sympy.log
 os.makedirs("results", exist_ok=True)
 os.makedirs("external_data", exist_ok=True)
 
-# 1. THE "NUCLEAR" MONKEY PATCH
-# We intercept the specific SymPy function that pyfrbus uses for Jacobians.
-# If the engine tries to differentiate wrt a number, we force it to return 0.
-def robust_diff(expr, symbol, *args, **kwargs):
-    try:
-        # If 'symbol' is actually a number, this is what's crashing.
-        float(str(symbol))
-        return sympy.Integer(0) 
-    except ValueError:
-        return sympy.diff(expr, symbol, *args, **kwargs)
+# 1. THE LEXER REPAIR
+# We intercept the string before it gets turned into a Symbol.
+# We will search for that specific float string and replace it with a literal number
+# so the symbolic engine never sees it as a 'Variable'.
+ghost_val = "4.52193548387097"
 
-# Inject our robust diff into the symbolic namespace
-import pyfrbus.symbolic
-pyfrbus.symbolic.diff = robust_diff
-print("🛡️ Jacobian Patch Applied: Numeric derivatives will be ignored.")
+original_lex = pyfrbus.lexing.lex_equation if hasattr(pyfrbus.lexing, 'lex_equation') else None
 
-# 2. LOAD & SOLVE
+def patched_lex(eq_string, *args, **kwargs):
+    # Forcibly clean the equation string of this specific float 'name'
+    if ghost_val in eq_string:
+        print(f"🩹 Lexer Patch: Neutralizing ghost in equation string...")
+        # We wrap it in parentheses to ensure it's treated as a numeric literal
+        eq_string = eq_string.replace(ghost_val, f"({ghost_val})")
+    return original_lex(eq_string, *args, **kwargs)
+
+if original_lex:
+    pyfrbus.lexing.lex_equation = patched_lex
+    print("🛡️ Lexer Patch Applied.")
+
+# 2. DATA & SOLVE
 data = load_data("data/LONGBASE.TXT")
 data.columns = [str(c).strip().lower() for c in data.columns]
-frbus = Frbus("models/model.xml")
 
 try:
-    print("🚀 Attempting solve with Patched Jacobian...")
+    frbus = Frbus("models/model.xml")
+    print("🚀 Attempting solve with Lexer Interception...")
     baseline_with_adds = frbus.init_trac("2023Q1", "2030Q4", data)
     sim = frbus.solve("2023Q1", "2030Q4", baseline_with_adds)
     sim.to_csv("results/output.csv")
-    print("✅ Success! The ghost was silenced.")
+    print("✨ Success!")
 except Exception as e:
     print(f"❌ Failure: {e}")
