@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the CONTENTS of your local pyfrbus folder into the image
 # This ensures the structure is /home/app/pyfrbus/load_data.py
-COPY pyfrbus/ /home/app/pyfrbus/
+COPY pyfrbus/pyfrbus/ ./pyfrbus/
+COPY pyfrbus/pyfrbus/data/ ./data/
 
 # Set PYTHONPATH so 'import pyfrbus' works from /home/app
 ENV PYTHONPATH="/home/app"
