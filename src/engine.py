@@ -26,13 +26,13 @@ def run_pipeline():
         print("\n📡 STAGE 1: Fetching Tealbook Data...")
         fetch_and_verify_macro_data()
         
-        data_path = 'data/tealbook_raw.xlsx'
-        if os.path.exists(data_path):
-            df = pd.read_excel(data_path)
+        processed_path = "data/tealbook_full_x.csv"
+        if os.path.exists(processed_path):
+            df = pd.read_excel(processed_path)
             
             # --- DEBUG SNAPSHOT ---
             print("\n--- 🔍 DATA DIAGNOSTIC SNAPSHOT ---")
-            print(f"📍 File Found: {data_path}")
+            print(f"📍 File Found: {processed_path}")
             print(f"📏 Dimensions: {df.shape[0]} rows x {df.shape[1]} columns")
             print(f"📋 Columns:    {list(df.columns)}")
             print("\n📥 Data Preview (Top 5):")
@@ -50,7 +50,7 @@ def run_pipeline():
             else:
                 print(f"⚠️ WARNING: 'date' not found in: {list(df.columns)}")
         else:
-            print(f"❌ CRITICAL: {data_path} was not created. Check network/URL.")
+            print(f"❌ CRITICAL: {processed_path} was not created. Check network/URL.")
             sys.exit(1)
 
         print("✅ Stage 1 Complete: Data loaded successfully.")
