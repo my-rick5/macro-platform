@@ -9,36 +9,45 @@ import builtins
 builtins.Derivative = sympy.Derivative
 builtins.symbols = sympy.symbols
 builtins.exp = sympy.exp # Common in FRB/US models
-builtins.log = sympy.log
+builtins.log = sympy.log    
 
+# 1. SETUP
+os.makedirs("results", exist_ok=True)
+
+# 2. LOAD & SANITIZE DATA
 data = load_data("data/LONGBASE.TXT")
 data.columns = [str(c).strip().lower() for c in data.columns]
 
-# 3. PATCH MISSING SERIES
-# We saw 'dmptmax' was missing in Build #891. 
-# Let's ensure it and any others are there.
-required_vars = ['dmptmax', 'dmptay', 'dmprr']
-for v in required_vars:
-    if v not in data.columns:
-        print(f"⚠️ Patching missing variable: {v}")
-        data[v] = 0.0
+# Ensure no NaNs are being passed as variable names
+data = data.fillna(0.0)
 
-# 4. LOAD MODEL
+# 3. LOAD MODEL
 frbus = Frbus("models/model.xml")
 start, end = "2023Q1", "2030Q4"
 
-# 5. INITIALIZE & SOLVE
-try:
-    print("🚀 Initializing Tracking...")
-    # This is where the Derivative error was happening in #892
-    baseline_with_adds = frbus.init_trac(start, end, data)
+# 4. INITIALIZE TRACKING
+baseline_with_adds = frbus.init_trac(start, end, data)
+
+# 5. THE EXORCISM: Explicitly clean the solver's variable list
+# We check the 'model' and 'equations' objects for any floating point 'names'
+if hasattr(frbus, 'model'):
+    print("🧹 Cleaning internal variable lists...")
+    # This reaches into the core list of variables the solver is tracking
+    frbus.model.endog = [v for v in frbus.model.endog if isinstance(v, str)]
     
-    print("🚀 Running Solver...")
+    # If the ghost number is specifically in the list, this will kill it
+    ghost = 4.52193548387097
+    frbus.model.endog = [v for v in frbus.model.endog if v != ghost and v != str(ghost)]
+
+# 6. SOLVE
+try:
+    print("🚀 Attempting final solve...")
+    # Passing 'jit=False' sometimes helps if the compiled Jacobian is the culprit
     sim = frbus.solve(start, end, baseline_with_adds)
     sim.to_csv("results/output.csv")
-    print("✅ Success! Check Artifacts.")
-    
+    print("✅ Success!")
 except Exception as e:
     print(f"❌ Failure: {e}")
-    # Print a slightly longer list of columns to check for that ghost number
-    print(f"Column Check: {list(data.columns)[20:40]}")
+    # DIAGNOSTIC: Search for the number in the equation symbols
+    if hasattr(frbus, 'model'):
+        print(f"Is ghost in endog? {str(ghost) in frbus.model.endog}")
