@@ -4,7 +4,7 @@ import pandas as pd
 def fetch_and_verify_macro_data():
     data_dir = "/home/spark/data"
     local_xlsx = os.path.join(data_dir, "library.xlsx") 
-    output_csv = os.path.join(data_dir, "data", "tealbook_full_x.csv")
+    output_csv = os.path.join(data_dir, "tealbook_full_x.csv")
     
     # Ensure the directory exists
     os.makedirs(data_dir, exist_ok=True)
