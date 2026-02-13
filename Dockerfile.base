@@ -5,7 +5,10 @@ FROM python:3.9-slim
 RUN apt-get update && apt-get install -y \
     libxml2-dev \
     libxslt-dev \
+    libsuitesparse-dev \
+    swig \
     gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/spark

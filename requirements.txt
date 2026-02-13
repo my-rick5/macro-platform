@@ -1,12 +1,13 @@
 # --- Core Math & Data ---
-pandas
+pandas<2.0.0
 requests
 pdfplumber
-sympy
+sympy<1.13
 openpyxl
 lxml
 symengine
-scipy
+scipy<1.11.0
+scikits.sparse
 
 # --- CI/CD & Testing ---
 pytest
