@@ -14,37 +14,41 @@ builtins.exp = sympy.exp # Common in FRB/US models
 builtins.log = sympy.log    
 
 
-# 1. SETUP
 os.makedirs("results", exist_ok=True)
-os.makedirs("external_data", exist_ok=True)
 
-# 2. LOAD MODEL FIRST
+# 1. LOAD MODEL
 frbus = Frbus("models/model.xml")
 
-# 3. FILTER DATA BY MODEL NAMES
-# We only keep columns that the model actually knows about.
-# This prevents any "stray" numbers in the CSV from being read as variables.
-raw_data = load_data("data/LONGBASE.TXT")
-raw_data.columns = [str(c).strip().lower() for c in raw_data.columns]
+# 2. DIAGNOSTIC: Why 933?
+# We print the first 50 variable names. If we see numbers here, 
+# the model.xml parsing is definitely the culprit.
+print(f"🧐 Inspecting variable list (Total: {len(frbus.endo_names)}):")
+print(f"Sample: {frbus.endo_names[:50]}")
 
-# Get the list of all valid variables from the model API
-valid_vars = set(frbus.endo_names) | set(frbus.exo_names)
-print(f"📋 Model expects {len(valid_vars)} variables.")
+# 3. THE "GHOST" INTERCEPTION
+ghost_str = "4.52193548387097"
 
-# Keep only valid columns + the index
-data = raw_data[[col for col in raw_data.columns if col in valid_vars]]
+# We check if the ghost is considered a variable and KILL IT
+if ghost_str in frbus.endo_names:
+    print(f"🎯 GHOST DETECTED in Endogenous list! Removing...")
+    frbus.endo_names.remove(ghost_str)
 
-# 4. PATCH DMPTMAX (if still missing from the whitelist)
+if ghost_str in frbus.exo_names:
+    print(f"🎯 GHOST DETECTED in Exogenous list! Removing...")
+    frbus.exo_names.remove(ghost_str)
+
+# 4. DATA ALIGNMENT
+data = load_data("data/LONGBASE.TXT")
+data.columns = [str(c).strip().lower() for c in data.columns]
 if 'dmptmax' not in data.columns:
     data['dmptmax'] = 0.0
 
 # 5. SOLVE
-start, end = "2023Q1", "2030Q4"
 try:
-    print("🚀 Solving with Strict Variable Whitelist...")
-    baseline_with_adds = frbus.init_trac(start, end, data)
-    sim = frbus.solve(start, end, baseline_with_adds)
+    print("🚀 Attempting solve with sanitized symbol table...")
+    baseline_with_adds = frbus.init_trac("2023Q1", "2030Q4", data)
+    sim = frbus.solve("2023Q1", "2030Q4", baseline_with_adds)
     sim.to_csv("results/output.csv")
-    print("✅ Success! Whitelisting blocked the ghost value.")
+    print("✨ Success!")
 except Exception as e:
     print(f"❌ Failure: {e}")
