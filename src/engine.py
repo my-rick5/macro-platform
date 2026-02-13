@@ -14,42 +14,41 @@ builtins.symbols = sympy.symbols
 builtins.exp = sympy.exp # Common in FRB/US models
 builtins.log = sympy.log    
 
-
 os.makedirs("results", exist_ok=True)
-os.makedirs("external_data", exist_ok=True)
 
-# 1. THE LEXER REPAIR
-# We intercept the string before it gets turned into a Symbol.
-# We will search for that specific float string and replace it with a literal number
-# so the symbolic engine never sees it as a 'Variable'.
+# 1. PATCH RUN_JAC.PY INTERNALS
+original_jac_2_callable = pyfrbus.run_jac.jac_2_callable
 ghost_val = "4.52193548387097"
 
-original_lex = pyfrbus.lexing.lex_equation if hasattr(pyfrbus.lexing, 'lex_equation') else None
+def patched_jac_2_callable(jac):
+    sanitized_jac = []
+    for row, col, expr_str in jac:
+        # If the ghost number is being treated as a variable in a derivative string
+        # e.g., "Derivative(variable, 4.52193548387097)"
+        # we strip it out or replace it with a constant 0.
+        if ghost_val in expr_str:
+            print(f"🩹 Sanitizing Jacobian string: {expr_str[:50]}...")
+            # If the string is a derivative wrt the ghost, it should be 0
+            if f", {ghost_val})" in expr_str:
+                expr_str = "0"
+        sanitized_jac.append((row, col, expr_str))
+    
+    return original_jac_2_callable(sanitized_jac)
 
-def patched_lex(eq_string, *args, **kwargs):
-    # Forcibly clean the equation string of this specific float 'name'
-    if ghost_val in eq_string:
-        print(f"🩹 Lexer Patch: Neutralizing ghost in equation string...")
-        # We wrap it in parentheses to ensure it's treated as a numeric literal
-        eq_string = eq_string.replace(ghost_val, f"({ghost_val})")
-    return original_lex(eq_string, *args, **kwargs)
+# Inject the patch
+pyfrbus.run_jac.jac_2_callable = patched_jac_2_callable
+print("🛡️ run_jac.py string-interceptor active.")
 
-if original_lex:
-    pyfrbus.lexing.lex_equation = patched_lex
-    print("🛡️ Lexer Patch Applied.")
-
-# 2. DATA & SOLVE
+# 2. LOAD & SOLVE
 data = load_data("data/LONGBASE.TXT")
 data.columns = [str(c).strip().lower() for c in data.columns]
-if 'dmptmax' not in data.columns:
-    data['dmptmax'] = 0.0
+frbus = Frbus("models/model.xml")
 
 try:
-    frbus = Frbus("models/model.xml")
-    print("🚀 Attempting solve with Lexer Interception...")
+    print("🚀 Running solve...")
     baseline_with_adds = frbus.init_trac("2023Q1", "2030Q4", data)
     sim = frbus.solve("2023Q1", "2030Q4", baseline_with_adds)
     sim.to_csv("results/output.csv")
-    print("✨ Success!")
+    print("✨ SUCCESS!")
 except Exception as e:
     print(f"❌ Failure: {e}")
