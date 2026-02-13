@@ -1,6 +1,7 @@
 import pandas as pd
 from pyfrbus.frbus import Frbus
 from pyfrbus.load_data import load_data
+import pyfrbus.lexing
 import sympy
 import builtins
 import os
@@ -40,6 +41,8 @@ if original_lex:
 # 2. DATA & SOLVE
 data = load_data("data/LONGBASE.TXT")
 data.columns = [str(c).strip().lower() for c in data.columns]
+if 'dmptmax' not in data.columns:
+    data['dmptmax'] = 0.0
 
 try:
     frbus = Frbus("models/model.xml")
