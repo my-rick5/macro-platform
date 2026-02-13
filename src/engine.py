@@ -20,18 +20,6 @@ data = load_data("data/LONGBASE.TXT")
 data.columns = [str(c).strip().lower() for c in data.columns]
 frbus = Frbus("models/model.xml")
 
-# 1. AUTOPSY: Find the number in the XML
-model_path = "models/model.xml"
-ghost_num = "4.52193548387097"
-
-print(f"🕵️ Scanning {model_path} for the ghost value...")
-if os.path.exists(model_path):
-    with open(model_path, 'r') as f:
-        for i, line in enumerate(f):
-            if ghost_num in line:
-                print(f"🚨 FOUND IT on line {i+1}:")
-                print(f"   {line.strip()}")
-
 # 2. EMERGENCY PATCH: Replace the number with a 1.0 (for testing)
 # This will tell us if the rest of the model can solve without that specific value.
 ghost_str = "4.52193548387097"
