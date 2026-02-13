@@ -39,13 +39,15 @@ baseline_with_adds = frbus.init_trac(start, end, data)
 # print(f"Sample data point: {current_val}")
 
 # 3. Try the solve again with a cleaner namespace
+opts = {'use_jac': False}
+
 try:
-    sim = frbus.solve(start, end, baseline_with_adds)
-except ValueError as e:
-    print(f"Solver failed. Error details: {e}")
-    # FALLBACK: If the Jacobian is broken, try a non-derivative solver
-    print("Attempting solve without analytic Jacobian...")
-    sim = frbus.solve(start, end, baseline_with_adds, use_jac=False) 
+    print("🚀 Attempting solve with numerical Jacobian...")
+    sim = frbus.solve(start, end, baseline_with_adds, solver_opts=opts)
+    sim.to_csv("results/output.csv")
+    print("✅ Success! Results saved.")
+except Exception as e:
+    print(f"❌ Solver failed again: {e}")
 
 # 4. Solve using the initialized baseline
 sim = frbus.solve(start, end, baseline_with_adds)
