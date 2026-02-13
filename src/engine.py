@@ -1,11 +1,16 @@
 import os
 import sys
 
+
 # 1. FORCE THE ENVIRONMENT (Before any other imports)
 try:
     import numpy as np
     import sympy
     import scipy
+    builtins.Derivative = sympy.Derivative
+    builtins.symbols = sympy.symbols
+    builtins.exp = sympy.exp # Common in FRB/US models
+    builtins.log = sympy.log
     print(f"✅ Environment Check: NumPy {np.__version__} is active.")
 except ImportError as e:
     print(f"🚨 CRITICAL MISSING DEPENDENCY: {e}")
