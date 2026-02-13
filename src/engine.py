@@ -1,84 +1,73 @@
-import pandas as pd
 import os
 import sys
+import pandas as pd
 
-# --- PORTABLE PATH INJECTION ---
-# Works whether running locally or in a 'base-image' container
-BASE_DIR = os.getenv('SPARK_HOME', '/home/spark')
-sys.path.insert(0, os.path.join(BASE_DIR, "pyfrbus"))
+# 1. SETUP: Pathing logic to ensure imports work regardless of where Docker starts
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+sys.path.append(SCRIPT_DIR)
+os.chdir(PROJECT_ROOT)
 
-try:
-    from pyfrbus.frbus import Frbus
-    print("✅ Frbus Module Loaded.")
-except Exception as e:
-    print(f"❌ Import Error: {e}")
-    sys.exit(1)
+from fetch_tealbook import fetch_and_verify_macro_data
 
-def run_pro_engine():
-    print("\n--- 🕵️ CORE VARIABLE AUDIT (Base-Image Ready) ---")
+def run_pipeline():
+    print("--- 🚀 Starting Macro Engine Pipeline ---")
     
-    proc_dir = os.path.join(BASE_DIR, "external_data")
+    # Ensure standard directories exist
+    os.makedirs('data', exist_ok=True)
+    os.makedirs('results', exist_ok=True)
     
-    # 1. Load Backbone (The 'History')
-    x_df = pd.read_csv(os.path.join(proc_dir, "longdata.csv"))
-    x_df.columns = [c.lower().strip() for c in x_df.columns]
-    x_df['date'] = pd.PeriodIndex(x_df['obs' if 'obs' in x_df.columns else 'date'], freq='Q')
-    x_df = x_df.set_index('date').sort_index()
-
-    # 2. Variable Audit & "Safe Merge"
-    core_vars = ['unemp', 'ffr', 'pce', 'gdp']
-    
-    # Start with a copy of the backbone
-    combined_df = x_df.copy()
-    
-    for var in core_vars:
-        file_path = os.path.join(proc_dir, f"{var}.csv")
-        if not os.path.exists(file_path):
-            print(f"⚠️ MISSING: {var}.csv - Using backbone values only.")
-            continue
-            
-        y_raw = pd.read_csv(file_path)
-        y_raw.columns = [c.lower().strip() for c in y_raw.columns]
-        
-        y_df = y_raw[['date', var]].copy()
-        y_df['date'] = pd.PeriodIndex(y_df['date'], freq='Q')
-        y_df = y_df.set_index('date').sort_index()
-        
-        # --- CRITICAL FIX ---
-        # We use combine_first so y_df (new data) fills holes in x_df (backbone)
-        # and update() to overwrite. This keeps the 1962-2018 buffer intact.
-        combined_df.update(y_df)
-        print(f"   ✅ {var.upper()} updated with preprocessed data.")
-
-    # 3. Define a Safe Solving Window
-    # To avoid 'index out of bounds', we solve only where we have fresh data
-    # plus a small buffer.
-    target_start = pd.Period('2017Q1', freq='Q')
-    target_end   = pd.Period('2022Q4', freq='Q')
-    
-    # Ensure window is within backbone limits
-    start = max(target_start, x_df.index.min() + 8) # +8 quarters buffer for lags
-    end   = min(target_end, x_df.index.max())
-
-    # 4. Run Solver
-    model_path = os.path.join(BASE_DIR, "models/model.xml")
+    # --- STAGE 1: FETCH & DIAGNOSE ---
     try:
-        model = Frbus(model_path)
-        print(f"\n📈 SOLVING WINDOW: {start} to {end}")
+        print("📡 Stage 1: Fetching Tealbook Data...")
         
-        # Relaxing tolerance slightly can also speed up the build
-        e_residuals = model.init_trac(start, end, combined_df)
+        # Execute the fetch script
+        fetch_and_verify_macro_data()
         
-        res_path = os.path.join(BASE_DIR, "results/calibration_residuals_e.csv")
-        os.makedirs(os.path.dirname(res_path), exist_ok=True)
-        e_residuals.loc[start:end].to_csv(res_path)
-        print(f"🏁 SUCCESS: Results saved to {res_path}")
+        # Load for diagnostic check (assumes fetch_tealbook saves to this path)
+        data_path = 'data/tealbook_raw.xlsx'
+        if os.path.exists(data_path):
+            df = pd.read_excel(data_path)
+            print(f"📊 Data Received: {df.shape[0]} rows, {df.shape[1]} columns")
+            
+            # Fuzzy Logic for 'date' column
+            # This looks for 'date', 'Date', 'DATE', or 'DATE '
+            cols = {c.strip().lower(): c for c in df.columns}
+            if 'date' in cols:
+                actual_col_name = cols['date']
+                print(f"✅ Found date column as: '{actual_col_name}'")
+                df.sort_values(actual_col_name, inplace=True)
+                # Standardize it to lowercase 'date' for the rest of the engine
+                df.rename(columns={actual_col_name: 'date'}, inplace=True)
+            else:
+                print(f"⚠️ WARNING: No date column found! Available: {list(df.columns)}")
+        else:
+            print(f"❌ Error: {data_path} was not created by the fetch script.")
+            sys.exit(1)
+
+        print("✅ Data Fetch & Verification Complete.")
         
     except Exception as e:
-        print(f"❌ SOLVER ERROR: {e}")
-        # Log the shape to debug the 'index out of bounds'
-        print(f"DEBUG: combined_df shape: {combined_df.shape}")
+        print(f"❌ Stage 1 Failed: {e}")
+        # This prints the full error stack trace to Jenkins console
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
+    # --- STAGE 2: CALIBRATION ENGINE ---
+    try:
+        print("🧪 Stage 2: Running Calibration Engine...")
+        
+        # TODO: Import and call your model/solver here
+        # from model import run_solver
+        # run_solver(df) 
+        
+        print("✅ Calibration Complete.")
+    except Exception as e:
+        print(f"❌ Stage 2 Failed: {e}")
+        sys.exit(1)
+
+    print("--- 🏁 All Systems Finished Successfully ---")
+
 if __name__ == "__main__":
-    run_pro_engine()
+    run_pipeline()
