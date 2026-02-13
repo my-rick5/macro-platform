@@ -6,6 +6,9 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     libxslt-dev \
     libsuitesparse-dev \
+    pkg-config \
+    cmake \
+    ninja-build \
     gfortran \
     swig \
     gcc \
