@@ -19,6 +19,10 @@ data = load_data("data/LONGBASE.TXT")
 # Load model
 frbus = Frbus("models/model.xml")
 
+# 2. Define Simulation Window
+start = "2023Q1"  # Ensure these match the index format in LONGBASE.TXT
+end = "2030Q4"
+
 # 3. CRITICAL: Initialize Tracking Residuals
 # This ensures all model variables are mapped to symbols, not values
 baseline_with_adds = frbus.init_trac(start, end, data)
