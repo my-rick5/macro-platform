@@ -29,14 +29,14 @@ baseline_with_adds = frbus.init_trac(start, end, data)
 
 # ... after init_trac ...
 
-# 1. Sanitize the internal endogenous variable list
-# This ensures no floats 'leaked' into the list of things to differentiate
-frbus.endog = [str(v) for v in frbus.endog if not isinstance(v, (int, float))]
+# # 1. Sanitize the internal endogenous variable list
+# # This ensures no floats 'leaked' into the list of things to differentiate
+# frbus.endog = [str(v) for v in frbus.endog if not isinstance(v, (int, float))]
 
-# 2. Check if the specific value is actually a variable value
-print(f"Checking if 4.5219... exists in current data slice...")
-current_val = data.loc[start, :].iloc[0] # Just a sample
-print(f"Sample data point: {current_val}")
+# # 2. Check if the specific value is actually a variable value
+# print(f"Checking if 4.5219... exists in current data slice...")
+# current_val = data.loc[start, :].iloc[0] # Just a sample
+# print(f"Sample data point: {current_val}")
 
 # 3. Try the solve again with a cleaner namespace
 try:
@@ -45,7 +45,7 @@ except ValueError as e:
     print(f"Solver failed. Error details: {e}")
     # FALLBACK: If the Jacobian is broken, try a non-derivative solver
     print("Attempting solve without analytic Jacobian...")
-    sim = frbus.solve(start, end, baseline_with_adds, use_jac=False)
+    sim = frbus.solve(start, end, baseline_with_adds, use_jac=False) 
 
 # 4. Solve using the initialized baseline
 sim = frbus.solve(start, end, baseline_with_adds)
