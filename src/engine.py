@@ -16,7 +16,7 @@ start, end = pd.Period("2040Q1"), pd.Period("2040Q1") + 23
 # Solve to baseline (this is the "Dude Forecast")
 frbus_baseline = frbus.init_trac(start, end, data)
 frbus_sim = frbus.solve(start, end, frbus_baseline)
-
+with_adds = frbus.init_trac(start, end, data)
 # --- 2. Pure Statistical (ARIMA) Forecast ---
 # We take the historical GDP (xgdp) up to the start date
 history = data.loc[:start-1, "xgdp"]
