@@ -24,50 +24,45 @@ except ImportError as e:
 os.makedirs("results", exist_ok=True)
 os.makedirs("external_data", exist_ok=True)
 
+original_xml = "models/model.xml"
+fixed_xml = "models/model_fixed.xml"
+ghost_str = "4.52193548387097"
+
+print(f"🧹 Scanning {original_xml} for ghost literals...")
+with open(original_xml, 'r') as f:
+    content = f.read()
+
+if ghost_str in content:
+    print(f"🎯 Ghost found in XML! Neutralizing...")
+    # Wrap the number in a way that the lexer won't mistake it for a variable name
+    content = content.replace(ghost_str, f"({ghost_str})")
+else:
+    # If the number isn't there, it's being calculated from a fraction like 140.18/31
+    # We will look for common day-count fractions and wrap them
+    print("🔎 Ghost not found as string; checking for fractions (e.g., /31)...")
+    content = re.sub(r'(\d+\.\d+/31)', r'(\1)', content)
+
+with open(fixed_xml, 'w') as f:
+    f.write(content)
+
+# 2. LOAD WITH THE FIXED XML
 try:
-    # 2. THE PATH FIX
-    # Your ls -R shows the actual code is in /home/app/pyfrbus/pyfrbus/
-    # We add that specific subfolder to the path
     sys.path.append("/home/app/pyfrbus")
-    
     from pyfrbus.load_data import load_data
     from pyfrbus.frbus import Frbus
-    import pyfrbus.symbolic as symbolic
-    print("✅ Modules loaded from nested pyfrbus directory.")
-
-    # 3. THE GHOST PATCH
-    ghost_val = "4.52193548387097"
-    original_partial = symbolic.take_symengine_partial
     
-    def patched_partial(eq, w_resp_to, data_hash):
-        target = str(w_resp_to)
-        if ghost_val in target:
-            print(f"🛡️ Neutralizing ghost variable in Jacobian: {target}")
-            return "0"
-        return original_partial(eq, w_resp_to, data_hash)
-    
-    symbolic.take_symengine_partial = patched_partial
-
-    # 4. DATA AUDIT & SOLVE
     data = load_data("data/LONGBASE.TXT")
     data.columns = [str(c).strip().lower() for c in data.columns]
     
-    # Quick check: Is RBBB involved in the ghost number?
-    if 'rbbb' in data.columns:
-        mean_rbbb = data['rbbb'].mean()
-        print(f"📊 Mean RBBB in data: {mean_rbbb}")
-        if str(ghost_val)[:5] in str(mean_rbbb):
-            print("🚨 Warning: Ghost value matches RBBB data patterns.")
-
-    frbus = Frbus("models/model.xml")
+    # LOAD THE REPAIRED XML
+    print(f"🚀 Loading model from {fixed_xml}...")
+    frbus = Frbus(fixed_xml)
     
-    print("🚀 Solving...")
-    # Use the standard horizon from your logs
     baseline = frbus.init_trac("2023Q1", "2030Q4", data)
     sim = frbus.solve("2023Q1", "2030Q4", baseline)
     
     sim.to_csv("results/output.csv")
-    print("✨ SUCCESS! Check results/output.csv")
+    print("✨ SUCCESS!")
 
 except Exception as e:
     print(f"❌ FATAL: {e}")
