@@ -1,32 +1,57 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import os
+from statsmodels.tsa.arima.model import ARIMA
 from pyfrbus.frbus import Frbus
 from pyfrbus.load_data import load_data
-from pyfrbus.sim_lib import sim_plot
+import os
 
-# 1. Setup
+# Create artifact directory
 os.makedirs("results", exist_ok=True)
+
+# --- 1. FRB/US "Staff" Forecast ---
 data = load_data("data/LONGBASE.TXT")
 frbus = Frbus("pyfrbus/models/model.xml")
+start, end = pd.Period("2040Q1"), pd.Period("2040Q1") + 23
 
-start = pd.Period("2040Q1")
-end = start + 23
+# Solve to baseline (this is the "Dude Forecast")
+frbus_baseline = frbus.init_trac(start, end, data)
+frbus_sim = frbus.solve(start, end, frbus_baseline)
 
-# 2. Run the "Regular Forecast" (No Shocks)
-# init_trac calculates the 'add factors' to match LONGBASE exactly
-with_adds = frbus.init_trac(start, end, data)
-sim = frbus.solve(start, end, with_adds)
+# --- 2. Pure Statistical (ARIMA) Forecast ---
+# We take the historical GDP (xgdp) up to the start date
+history = data.loc[:start-1, "xgdp"]
 
-# 3. Save Artifacts
-# Save the full simulation dataframe to CSV
-sim.to_csv("results/frbus_baseline_forecast.csv")
+# Fit an ARIMA(2,1,0): 2 lags, 1 difference (to make it stationary), 0 moving avg
+# This is a standard "statistical" approach to GDP
+arima_model = ARIMA(history, order=(2, 1, 0))
+arima_results = arima_model.fit()
 
-# Create the plot
-# We use a standard matplotlib figure so we can save it
-plt.figure(figsize=(10, 6))
-sim_plot(with_adds, sim, start, end)
-plt.suptitle(f"FRB/US Regular Forecast Baseline ({start} - {end})")
-plt.savefig("results/baseline_plot.png", dpi=300)
+# Forecast the same 24 quarters
+arima_forecast = arima_results.get_forecast(steps=24).summary_frame()
+arima_forecast.index = pd.period_range(start, end, freq='Q')
 
-print("✅ Baseline CSV and Plot archived in ./results/")
+# --- 3. Save Artifacts ---
+# Combine into one CSV for comparison
+comparison_df = pd.DataFrame({
+    "FRB_US_Forecast": frbus_sim["xgdp"],
+    "ARIMA_Forecast": arima_forecast["mean"],
+    "ARIMA_Lower_95": arima_forecast["mean_ci_lower"],
+    "ARIMA_Upper_95": arima_forecast["mean_ci_upper"]
+})
+comparison_df.to_csv("results/forecast_comparison.csv")
+
+# Generate Plot
+plt.figure(figsize=(12, 6))
+plt.plot(comparison_df.index.to_timestamp(), comparison_df["FRB_US_Forecast"], 
+         label="FRB/US (Structural/Staff)", color='blue', linewidth=2)
+plt.plot(comparison_df.index.to_timestamp(), comparison_df["ARIMA_Forecast"], 
+         label="ARIMA (Statistical/Momentum)", color='red', linestyle='--')
+plt.fill_between(comparison_df.index.to_timestamp(), 
+                 comparison_df["ARIMA_Lower_95"], 
+                 comparison_df["ARIMA_Upper_95"], color='red', alpha=0.1, label="ARIMA 95% CI")
+
+plt.title("Economic Forecast: Structural (FRB/US) vs. Statistical (ARIMA)")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig("results/forecast_plot.png")
+print("✅ Artifacts saved to ./results/")
