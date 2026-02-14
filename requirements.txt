@@ -1,8 +1,9 @@
 # --- Core Math & Data ---
+numpy>=1.22.0,<1.25.0
 pandas<2.0.0
 requests
 pdfplumber
-sympy<1.13
+sympy==1.3            # Hard-pin to match setup.py compliance
 openpyxl
 lxml
 symengine
@@ -11,6 +12,12 @@ scikit-umfpack
 multiprocess
 dill
 matplotlib
+numexpr               # Optimization for symbolic evaluation
+jinja2                # Equation template rendering
+
+# --- Build & Glue ---
+cython                # For C++ extension compatibility
+pyyaml                # Data metadata parsing
 
 # --- CI/CD & Testing ---
 pytest
