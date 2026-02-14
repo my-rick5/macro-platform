@@ -1,5 +1,6 @@
 import os
 import sys
+import re 
 
 
 # 1. FORCE THE ENVIRONMENT (Before any other imports)
