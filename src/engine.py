@@ -28,3 +28,10 @@ sim = frbus.solve(start, end, with_adds)
 
 # View results
 sim_plot(with_adds, sim, start, end)
+
+# Archive data
+sim.to_csv("results/sim_results.csv")
+
+# Archive plot
+sim_plot(with_adds, sim, start, end)
+plt.savefig("results/sim_plot.png")
