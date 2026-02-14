@@ -37,4 +37,4 @@ solutions = frbus.stochsim(
 )
 
 stochsim_plot(with_adds, solutions, simstart, simend)
-plt.savefig(results/stochsim_plot.png)
+plt.savefig('results/stochsim_plot.png')
