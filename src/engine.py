@@ -26,44 +26,45 @@ os.makedirs("results", exist_ok=True)
 os.makedirs("external_data", exist_ok=True)
 
 try:
-    # 1. FORCE THE CORRECT PATH
-    # We point directly to the inner logic folder seen in Build #934
+    # 1. FORCE THE INNER PATH
     sys.path.insert(0, "/home/app/pyfrbus/pyfrbus")
-    sys.path.insert(0, "/home/app/pyfrbus")
     
-    import run_jac
+    import lexing
     import symbolic
     from frbus import Frbus
     from load_data import load_data
     
-    print(f"✅ Deep-path imports successful. Patching {run_jac.__file__}")
+    print(f"✅ Lexer found at: {lexing.__file__}")
 
-    # 2. THE ULTIMATE JACOBIAN GUARD
-    # If the engine creates a derivative string like 'Derivative(..., 4.5219...)', 
-    # we catch it at the run_jac level.
-    ghost_val = "4.52193548387097"
-    
-    original_jac_2_callable = run_jac.jac_2_callable
-    def patched_jac_2_callable(jac):
-        # jac is a list of (row, col, expression_string)
-        sanitized_jac = []
-        for r, c, expr in jac:
-            if ghost_val in str(expr):
-                # If the ghost is the variable of differentiation, the derivative is 0
-                expr = "0"
-            sanitized_jac.append((r, c, expr))
-        return original_jac_2_callable(sanitized_jac)
-    
-    run_jac.jac_2_callable = patched_jac_2_callable
-    print("🛡️ Jacobian Callable Interceptor active.")
+    # 2. THE LEXER GUARD
+    # We intercept the function that identifies symbols.
+    # If it sees a string that starts with a number, we force it to be a 'Number' type.
+    if hasattr(lexing, 'get_symbols'):
+        original_get_symbols = lexing.get_symbols
+        def patched_get_symbols(expr_str):
+            symbols = original_get_symbols(expr_str)
+            # Filter out anything that looks like a float/number
+            safe_symbols = [s for s in symbols if not s[0].isdigit()]
+            return safe_symbols
+        lexing.get_symbols = patched_get_symbols
+        print("🛡️ Lexer Symbol-Guard active. Numeric 'variables' will be blocked.")
 
-    # 3. DATA & SOLVE
+    # 3. THE SYMBOLIC BACKSTOP
+    # Just in case, we tell SymEngine's wrapper to return 0 for any numeric derivative
+    original_diff = symbolic.take_symengine_partial
+    def patched_diff(eq, w_resp_to, data_hash):
+        if str(w_resp_to)[0].isdigit():
+            return "0"
+        return original_diff(eq, w_resp_to, data_hash)
+    symbolic.take_symengine_partial = patched_diff
+
+    # 4. RUN SOLVE
     data = load_data("data/LONGBASE.TXT")
     data.columns = [str(col).strip().lower() for col in data.columns]
     
     frbus = Frbus("models/model.xml")
     
-    print("🚀 Running solver (Build #935)...")
+    print("🚀 Running solver (Build #936)...")
     baseline = frbus.init_trac("2023Q1", "2030Q4", data)
     sim = frbus.solve("2023Q1", "2030Q4", baseline)
     
