@@ -16,8 +16,8 @@ frbus = Frbus("pyfrbus/models/model.xml")
 # Specify dates and other params
 residstart = "1975q1"
 residend = "2018q4"
-simstart = "2040q1"
-simend = "2045q4"
+simstart = "2019q1"
+simend = "2030q4"
 # Number of replications
 nrepl = 1000
 # Run up to 5 extra replications, in case of failures
