@@ -3,6 +3,7 @@ import pandas
 from pyfrbus.frbus import Frbus
 from pyfrbus.sim_lib import sim_plot
 from pyfrbus.load_data import load_data
+from pyfrbus.sim_lib import stochsim_plot
 import matplotlib.pyplot as plt
 
 
