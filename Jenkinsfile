@@ -8,7 +8,6 @@ pipeline {
     environment {
         BASE_IMAGE = "macro-engine-base:latest"
         APP_IMAGE  = "macro-engine-app:${env.BUILD_NUMBER}"
-        // Updated home directory to match your new Dockerfile structure
         APP_HOME   = "/home/app"
     }
 
@@ -16,7 +15,6 @@ pipeline {
         stage('🛠️ Setup Base Image') {
             steps {
                 script {
-                    // Check if image exists locally
                     def baseExists = sh(script: "docker images -q ${BASE_IMAGE}", returnStdout: true).trim()
                     
                     if (params.REBUILD_BASE || baseExists == "") {
@@ -31,24 +29,28 @@ pipeline {
 
         stage('📦 Build App') {
             steps {
-                echo "⚡ Building App Layer (This should take < 10s)..."
+                echo "⚡ Building App Layer..."
                 sh "docker build -t ${APP_IMAGE} ."
             }
         }
 
         stage('🧪 Run Engine') {
             steps {
-                // Run the container using the build number as a unique identifier
+                // Ensure local workspace directories exist for the 'cp' command later
+                sh "mkdir -p results debug_data"
+                
+                // Run the container
                 sh "docker run --name engine-${env.BUILD_NUMBER} ${APP_IMAGE}"
             }
             post {
                 always {
                     echo "📥 Extracting Results and Diagnostics..."
-                    // Updated paths from /home/spark to /home/app (via ${APP_HOME})
-                    sh "docker run --entrypoint /bin/sh ${APP_IMAGE} -c 'ls -R /home/app'"
-                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.APP_HOME}/results/. ./results/ || true"
-                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.APP_HOME}/external_data/. ./debug_data/ || true"
-                    sh "docker rm engine-${env.BUILD_NUMBER}"
+                    // Fixed: Copying from container to the local workspace folders we just created
+                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.APP_HOME}/results/. ./results/ || echo 'Warning: Results folder not found in container'"
+                    sh "docker cp engine-${env.BUILD_NUMBER}:${env.APP_HOME}/external_data/. ./debug_data/ || echo 'Warning: Debug data not found'"
+                    
+                    // Cleanup the container to keep the agent disk clean
+                    sh "docker rm -f engine-${env.BUILD_NUMBER}"
                 }
             }
         }
@@ -56,8 +58,11 @@ pipeline {
 
     post {
         success {
-            // Updated to ensure it looks in the workspace directories we just copied into
-            archiveArtifacts artifacts: 'results/*.csv', 'results/*.png', allowEmptyArchive: true, fingerprint: true
+            // FIXED SYNTAX: Multiple patterns in a single comma-separated string
+            archiveArtifacts artifacts: 'results/*.csv, results/*.png', 
+                             allowEmptyArchive: true, 
+                             fingerprint: true
+                             
             echo "🏁 Calibration Complete. Check Artifacts for residuals."
         }
         failure {
