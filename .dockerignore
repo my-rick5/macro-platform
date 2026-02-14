@@ -21,3 +21,13 @@ mlruns/
 output/
 *.json
 
+results/*.csv
+results/*.png
+debug_data/*.csv
+debug_data/*.txt
+external_data/
+
+# Keep the folder structure but start them empty
+!results/
+!debug_data/
+
