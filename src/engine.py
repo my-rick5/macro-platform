@@ -15,7 +15,7 @@ start, end = pd.Period("2040Q1"), pd.Period("2040Q1") + 23
 
 # Solve to baseline (this is the "Dude Forecast")
 frbus_baseline = frbus.init_trac(start, end, data)
-sim = frbus.solve(start, end, frbus_baseline)
+frbus_sim = frbus.solve(start, end, frbus_baseline)
 with_adds = frbus.init_trac(start, end, data)
 # --- 2. Pure Statistical (ARIMA) Forecast ---
 # We take the historical GDP (xgdp) up to the start date
@@ -65,14 +65,14 @@ axes = axes.flatten()
 for i, var in enumerate(vars_to_plot):
     # Plot the baseline vs the simulation
     axes[i].plot(with_adds.index.to_timestamp(), with_adds[var], label='Baseline', color='gray', linestyle='--')
-    axes[i].plot(sim.index.to_timestamp(), sim[var], label='Shock', color='blue')
+    axes[i].plot(frbus_sim.index.to_timestamp(), frbus_sim[var], label='Shock', color='blue')
     
     # 1. SCALE FIX: Set X-axis limits to your specific window
     axes[i].set_xlim(start.to_timestamp(), end.to_timestamp())
     
     # 2. SCALE FIX: Auto-scale Y-axis based ONLY on the data in that window
     # This prevents the "2175 steady state" from squishing the current data
-    window_data = sim.loc[start:end, var]
+    window_data = frbus_sim.loc[start:end, var]
     buffer = (window_data.max() - window_data.min()) * 0.1
     axes[i].set_ylim(window_data.min() - buffer, window_data.max() + buffer)
     
