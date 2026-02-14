@@ -13,8 +13,10 @@ multiprocess
 dill
 matplotlib
 numexpr               # Optimization for symbolic evaluation
-jinja2                # Equation template rendering
+jinja2      
+          # Equation template rendering
 
+statsmodels
 # --- Build & Glue ---
 cython                # For C++ extension compatibility
 pyyaml                # Data metadata parsing
