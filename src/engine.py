@@ -9,7 +9,7 @@ from pyfrbus.load_data import load_data
 data = load_data("data/LONGBASE.TXT")
 
 # Load model
-frbus = Frbus("models/model.xml")
+frbus = Frbus("pyfrbus/models/model.xml")
 
 # Specify dates
 start = pandas.Period("2040Q1")
