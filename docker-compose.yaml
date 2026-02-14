@@ -1,21 +1,19 @@
 version: '3.8'
 
 services:
-  macro-engine:
-    image: macro-engine-local:latest
-    container_name: frbus_structural_engine
-    user: "1099:1099" # Matches the 'spark' user in your Dockerfile
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+    image: pyfrbus-engine:latest
+    container_name: macro_engine
     volumes:
-      - ./:/home/spark           # Mounts current directory to container
-      - ./data:/home/spark/data
-      - ./results:/home/spark/results
-      - ./models:/home/spark/models
+      # Map local folders to container folders
+      # This allows you to see results immediately on your host machine
+      - ./results:/home/app/results
+      - ./debug_data:/home/app/debug_data
+      - ./data:/home/app/data
     environment:
-      - PYTHONPATH=/home/spark/.local/lib/python3.9/site-packages:/home/spark
-    deploy:
-      resources:
-        limits:
-          memory: 4G        # Enforces the 4GB ceiling
-        reservations:
-          memory: 2G        # Guarantees at least 2GB
-    command: python3 src/engine.py
+      - PYTHONPATH=/home/app
+    # The command to run your specific script
+    command: python src/engine.py

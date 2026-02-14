@@ -1,45 +1,30 @@
-import os
-import sys
-import sympy
+import pandas
+
+from pyfrbus.frbus import Frbus
+from pyfrbus.sim_lib import sim_plot
+from pyfrbus.load_data import load_data
 
 
-# 2. ENVIRONMENT COMPLIANCE CHECK
-print(f"🕵️ SymPy Version: {sympy.__version__}")
-if sympy.__version__ != "1.3":
-    print("🚨 WARNING: Environment is non-compliant. Expected SymPy 1.3.")
+# Load data
+data = load_data("../data/LONGBASE.TXT")
 
-try:
-    # Set the path to the inner logic folder
-    sys.path.insert(0, "/home/app/pyfrbus/pyfrbus")
-    
-    from frbus import Frbus
-    from load_data import load_data
-    
-    # 3. DATA LOADING
-    # Standardizing columns to lowercase handles many 'variable not found' issues
-    data = load_data("data/LONGBASE.TXT")
-    data.columns = [str(col).strip().lower() for col in data.columns]
-    
-    # 4. MODEL INITIALIZATION
-    print("🚀 Loading Model...")
-    frbus = Frbus("models/model.xml")
-    
-    # 5. SOLVE
-    # Range based on your previous logs
-    start_q, end_q = "2023Q1", "2030Q4"
-    print(f"📈 Solving from {start_q} to {end_q}...")
-    
-    baseline = frbus.init_trac(start_q, end_q, data)
-    sim = frbus.solve(start_q, end_q, baseline)
-    
-    # 6. EXPORT
-    output_path = "results/output.csv"
-    sim.to_csv(output_path)
-    print(f"✨ SUCCESS! Results written to {output_path}")
+# Load model
+frbus = Frbus("../models/model.xml")
 
-except Exception as e:
-    print(f"❌ FATAL ERROR: {e}")
-    # Persistent log for Jenkins to archive
-    with open("external_data/failure_log.txt", "w") as f:
-        f.write(str(e))
-    sys.exit(1)
+# Specify dates
+start = pandas.Period("2040Q1")
+end = start + 23
+
+# Standard configuration, use surplus ratio targeting
+data.loc[start:end, "dfpdbt"] = 0
+data.loc[start:end, "dfpsrp"] = 1
+
+# Solve to baseline with adds
+with_adds = frbus.init_trac(start, end, data)
+
+# 100 bp monetary policy shock and solve
+with_adds.loc[start, "rffintay_aerr"] += 1
+sim = frbus.solve(start, end, with_adds)
+
+# View results
+sim_plot(with_adds, sim, start, end)
