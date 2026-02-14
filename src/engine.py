@@ -25,49 +25,34 @@ except ImportError as e:
 os.makedirs("results", exist_ok=True)
 os.makedirs("external_data", exist_ok=True)
 
-original_xml = "models/model.xml"
-fixed_xml = "models/model_fixed.xml"
-
-print(f"🧹 Performing deep-math scan on {original_xml}...")
-with open(original_xml, 'r') as f:
-    content = f.read()
-
-# Pattern 1: Find 140.18 / 31 and wrap it in parentheses to stop early evaluation
-if "140.18" in content:
-    print("🎯 Found potential numerator 140.18. Wrapping math expressions...")
-    content = content.replace("140.18/31", "(140.18/31)")
-
-# Pattern 2: Global protection for any decimal divided by 31 
-# (Common in bond yield/RBBB logic)
-content = re.sub(r'(\d+\.\d+)/31', r'(\1/31.0)', content)
-
-with open(fixed_xml, 'w') as f:
-    f.write(content)
-
-# 2. RUN WITH GLOBAL SYMPY PATCH
-# We also use a "Nuclear Option" on SymPy itself to ignore derivatives wrt numbers
-import sympy
-old_diff = sympy.diff
-def robust_diff(f, *symbols, **kwargs):
-    # Filter out any 'symbol' that looks like our ghost number
-    clean_symbols = [s for s in symbols if str(s) != "4.52193548387097"]
-    if not clean_symbols:
-        return 0
-    return old_diff(f, *clean_symbols, **kwargs)
-sympy.diff = robust_diff
-
-# 3. LOAD AND SOLVE
 try:
     sys.path.append("/home/app/pyfrbus")
-    from pyfrbus.load_data import load_data
     from pyfrbus.frbus import Frbus
+    from pyfrbus.load_data import load_data
+    import pyfrbus.equations # This is where variable lists usually live
     
+    # THE NUCLEAR GUARD: 
+    # Intercept the 'get_rhs_vars' or equivalent function to filter numbers
+    ghost_val = "4.52193548387097"
+    
+    if hasattr(pyfrbus.equations, 'get_rhs_vars'):
+        original_get_vars = pyfrbus.equations.get_rhs_vars
+        def patched_get_vars(*args, **kwargs):
+            vars_set = original_get_vars(*args, **kwargs)
+            # Remove the ghost number from the set of 'variables'
+            if ghost_val in vars_set:
+                print(f"🛡️ Filtering ghost variable from equation RHS: {ghost_val}")
+                vars_set.remove(ghost_val)
+            return vars_set
+        pyfrbus.equations.get_rhs_vars = patched_get_vars
+
+    # DATA & MODEL
     data = load_data("data/LONGBASE.TXT")
     data.columns = [str(c).strip().lower() for c in data.columns]
     
-    frbus = Frbus(fixed_xml)
-    print("🚀 Attempting solve with Math Protection...")
+    frbus = Frbus("models/model.xml")
     
+    print("🚀 Attempting solve with Variable-List Filtering...")
     baseline = frbus.init_trac("2023Q1", "2030Q4", data)
     sim = frbus.solve("2023Q1", "2030Q4", baseline)
     
