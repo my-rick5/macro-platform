@@ -57,7 +57,7 @@ pipeline {
     post {
         success {
             // Updated to ensure it looks in the workspace directories we just copied into
-            archiveArtifacts artifacts: 'results/*.csv', 'outputs/*.png', allowEmptyArchive: true, fingerprint: true
+            archiveArtifacts artifacts: 'results/*.csv', 'results/*.png', allowEmptyArchive: true, fingerprint: true
             echo "🏁 Calibration Complete. Check Artifacts for residuals."
         }
         failure {
