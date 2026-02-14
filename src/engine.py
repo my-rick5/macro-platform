@@ -58,7 +58,7 @@ print("✅ Artifacts saved to ./results/")
 
 
 # Select the variables you actually care about
-vars_to_plot = ['rff', 'lur', 'pcepi', 'xgdp']
+vars_to_plot = ['rff', 'lur', 'pic4', 'xgdp']
 fig, axes = plt.subplots(2, 2, figsize=(12, 8))
 axes = axes.flatten()
 
