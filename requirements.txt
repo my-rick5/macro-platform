@@ -1,4 +1,5 @@
 # --- Core Math & Data ---
+statsmodels
 numpy>=1.22.0,<1.25.0
 pandas<2.0.0
 requests
@@ -16,7 +17,7 @@ numexpr               # Optimization for symbolic evaluation
 jinja2      
           # Equation template rendering
 
-statsmodels
+
 # --- Build & Glue ---
 cython                # For C++ extension compatibility
 pyyaml                # Data metadata parsing
