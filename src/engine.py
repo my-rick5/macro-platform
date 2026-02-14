@@ -30,6 +30,33 @@ arima_results = arima_model.fit()
 arima_forecast = arima_results.get_forecast(steps=24).summary_frame()
 arima_forecast.index = pd.period_range(start, end, freq='Q')
 
+# --- 3. Save Artifacts ---
+# Combine into one CSV for comparison
+comparison_df = pd.DataFrame({
+    "FRB_US_Forecast": frbus_sim["xgdp"],
+    "ARIMA_Forecast": arima_forecast["mean"],
+    "ARIMA_Lower_95": arima_forecast["mean_ci_lower"],
+    "ARIMA_Upper_95": arima_forecast["mean_ci_upper"]
+})
+comparison_df.to_csv("results/forecast_comparison.csv")
+
+# Generate Plot
+plt.figure(figsize=(12, 6))
+plt.plot(comparison_df.index.to_timestamp(), comparison_df["FRB_US_Forecast"], 
+         label="FRB/US (Structural/Staff)", color='blue', linewidth=2)
+plt.plot(comparison_df.index.to_timestamp(), comparison_df["ARIMA_Forecast"], 
+         label="ARIMA (Statistical/Momentum)", color='red', linestyle='--')
+plt.fill_between(comparison_df.index.to_timestamp(), 
+                 comparison_df["ARIMA_Lower_95"], 
+                 comparison_df["ARIMA_Upper_95"], color='red', alpha=0.1, label="ARIMA 95% CI")
+
+plt.title("Economic Forecast: Structural (FRB/US) vs. Statistical (ARIMA)")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig("results/forecast_plot.png")
+print("✅ Artifacts saved to ./results/")
+
+
 # Select the variables you actually care about
 vars_to_plot = ['rff', 'lur', 'pcepie', 'xgdp']
 fig, axes = plt.subplots(2, 2, figsize=(12, 8))
