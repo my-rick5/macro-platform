@@ -1,40 +1,32 @@
-import pandas
-
-from pyfrbus.frbus import Frbus
-from pyfrbus.sim_lib import sim_plot
-from pyfrbus.load_data import load_data
-from pyfrbus.sim_lib import stochsim_plot
+import pandas as pd
 import matplotlib.pyplot as plt
+import os
+from pyfrbus.frbus import Frbus
+from pyfrbus.load_data import load_data
+from pyfrbus.sim_lib import sim_plot
 
-
-# Load data
+# 1. Setup
+os.makedirs("results", exist_ok=True)
 data = load_data("data/LONGBASE.TXT")
-
-# Load model
 frbus = Frbus("pyfrbus/models/model.xml")
 
-# Specify dates and other params
-residstart = "1975q1"
-residend = "2018q4"
-simstart = "2019q1"
-simend = "2030q4"
-# Number of replications
-nrepl = 1000
-# Run up to 5 extra replications, in case of failures
-nextra = 5
+start = pd.Period("2040Q1")
+end = start + 23
 
-# Policy settings
-data.loc[simstart:simend, "dfpdbt"] = 0
-data.loc[simstart:simend, "dfpsrp"] = 1
+# 2. Run the "Regular Forecast" (No Shocks)
+# init_trac calculates the 'add factors' to match LONGBASE exactly
+with_adds = frbus.init_trac(start, end, data)
+sim = frbus.solve(start, end, with_adds)
 
-# Compute add factors
-# Both for baseline tracking and over history, to be used as shocks
-with_adds = frbus.init_trac(residstart, simend, data)
+# 3. Save Artifacts
+# Save the full simulation dataframe to CSV
+sim.to_csv("results/frbus_baseline_forecast.csv")
 
-# Call FRBUS stochsim procedure
-solutions = frbus.stochsim(
-    nrepl, with_adds, simstart, simend, residstart, residend, nextra=nextra
-)
+# Create the plot
+# We use a standard matplotlib figure so we can save it
+plt.figure(figsize=(10, 6))
+sim_plot(with_adds, sim, start, end)
+plt.suptitle(f"FRB/US Regular Forecast Baseline ({start} - {end})")
+plt.savefig("results/baseline_plot.png", dpi=300)
 
-stochsim_plot(with_adds, solutions, simstart, simend)
-plt.savefig('results/stochsim_plot.png')
+print("✅ Baseline CSV and Plot archived in ./results/")
