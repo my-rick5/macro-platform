@@ -13,6 +13,13 @@ pipeline {
     }
 
     stages {
+
+        stage('Clean') {
+            steps {
+                cleanWs()
+            }
+        }
+        
         stage('🛠️ Setup Base Image') {
             steps {
                 script {
