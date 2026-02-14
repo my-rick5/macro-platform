@@ -2,9 +2,6 @@ import os
 import sys
 import sympy
 
-# 1. SETUP DIRECTORIES
-os.makedirs("results", exist_ok=True)
-os.makedirs("external_data", exist_ok=True)
 
 # 2. ENVIRONMENT COMPLIANCE CHECK
 print(f"🕵️ SymPy Version: {sympy.__version__}")
