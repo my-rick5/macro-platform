@@ -1,78 +1,48 @@
 import os
 import sys
-import re 
+import sympy
 
-
-# 1. FORCE THE ENVIRONMENT (Before any other imports)
-try:
-    import numpy as np
-    import sympy
-    import scipy
-    import builtins
-    import pyfrbus.symbolic
-    builtins.Derivative = sympy.Derivative
-    builtins.symbols = sympy.symbols
-    builtins.exp = sympy.exp # Common in FRB/US models
-    builtins.log = sympy.log
-    print(f"✅ Environment Check: NumPy {np.__version__} is active.")
-except ImportError as e:
-    print(f"🚨 CRITICAL MISSING DEPENDENCY: {e}")
-    # In a containerized env, we want to fail fast if the base image is broken
-    sys.exit(1)
-
-# 2. THE PATCH (Our safety net for the specific ghost value)
-
+# 1. SETUP DIRECTORIES
 os.makedirs("results", exist_ok=True)
 os.makedirs("external_data", exist_ok=True)
 
+# 2. ENVIRONMENT COMPLIANCE CHECK
+print(f"🕵️ SymPy Version: {sympy.__version__}")
+if sympy.__version__ != "1.3":
+    print("🚨 WARNING: Environment is non-compliant. Expected SymPy 1.3.")
+
 try:
-    # 1. FORCE THE INNER PATH
+    # Set the path to the inner logic folder
     sys.path.insert(0, "/home/app/pyfrbus/pyfrbus")
     
-    import lexing
-    import symbolic
     from frbus import Frbus
     from load_data import load_data
     
-    print(f"✅ Lexer found at: {lexing.__file__}")
-
-    # 2. THE LEXER GUARD
-    # We intercept the function that identifies symbols.
-    # If it sees a string that starts with a number, we force it to be a 'Number' type.
-    if hasattr(lexing, 'get_symbols'):
-        original_get_symbols = lexing.get_symbols
-        def patched_get_symbols(expr_str):
-            symbols = original_get_symbols(expr_str)
-            # Filter out anything that looks like a float/number
-            safe_symbols = [s for s in symbols if not s[0].isdigit()]
-            return safe_symbols
-        lexing.get_symbols = patched_get_symbols
-        print("🛡️ Lexer Symbol-Guard active. Numeric 'variables' will be blocked.")
-
-    # 3. THE SYMBOLIC BACKSTOP
-    # Just in case, we tell SymEngine's wrapper to return 0 for any numeric derivative
-    original_diff = symbolic.take_symengine_partial
-    def patched_diff(eq, w_resp_to, data_hash):
-        if str(w_resp_to)[0].isdigit():
-            return "0"
-        return original_diff(eq, w_resp_to, data_hash)
-    symbolic.take_symengine_partial = patched_diff
-
-    # 4. RUN SOLVE
+    # 3. DATA LOADING
+    # Standardizing columns to lowercase handles many 'variable not found' issues
     data = load_data("data/LONGBASE.TXT")
     data.columns = [str(col).strip().lower() for col in data.columns]
     
+    # 4. MODEL INITIALIZATION
+    print("🚀 Loading Model...")
     frbus = Frbus("models/model.xml")
     
-    print("🚀 Running solver (Build #936)...")
-    baseline = frbus.init_trac("2023Q1", "2030Q4", data)
-    sim = frbus.solve("2023Q1", "2030Q4", baseline)
+    # 5. SOLVE
+    # Range based on your previous logs
+    start_q, end_q = "2023Q1", "2030Q4"
+    print(f"📈 Solving from {start_q} to {end_q}...")
     
-    sim.to_csv("results/output.csv")
-    print("✨ SUCCESS!")
+    baseline = frbus.init_trac(start_q, end_q, data)
+    sim = frbus.solve(start_q, end_q, baseline)
+    
+    # 6. EXPORT
+    output_path = "results/output.csv"
+    sim.to_csv(output_path)
+    print(f"✨ SUCCESS! Results written to {output_path}")
 
 except Exception as e:
-    print(f"❌ FATAL: {e}")
+    print(f"❌ FATAL ERROR: {e}")
+    # Persistent log for Jenkins to archive
     with open("external_data/failure_log.txt", "w") as f:
         f.write(str(e))
     sys.exit(1)
